@@ -5,7 +5,7 @@ services:
     runtime: node
     plan: free
     rootDir: wildlive
-    buildCommand: mkdir -p lib && cp /etc/secrets/vendor.js lib/vendor.js && bun install && bun run build:client
+    buildCommand: mkdir -p lib && cp /etc/secrets/vendor.js lib/vendor.js && bun install --production && bun run build:client
     startCommand: bun run start
     healthCheckPath: /
     envVars:
