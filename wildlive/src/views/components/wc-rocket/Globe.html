@@ -1,0 +1,163 @@
+<template data-rocket:rocket-globe
+          data-props:target='json|={"lat":40,"lng":-100}'
+          data-props:places="json|={}"
+          data-import:globe="https://cdn.jsdelivr.net/npm/globe.gl@2.43.0/+esm"
+>
+  <script data-static>
+    // biome-ignore lint/correctness/noUnusedVariables: used in main script via Rocket's data-static
+    const markerSvg = `<svg viewBox="-4 0 36 36" width="32" height="32">
+      <path fill="currentColor" d="M14,0 C21.732,0 28,5.641 28,12.6 C28,23.963 14,36 14,36 C14,36 0,24.064 0,12.6 C0,5.641 6.268,0 14,0 Z"/>
+      <circle fill="black" cx="14" cy="14" r="7"/>
+    </svg>`
+  </script>
+
+  <script>
+
+    // Initialize globe - DOM is ready when setup runs
+    const w = $$container.offsetWidth
+    const h = $$container.offsetHeight
+    const alt = w / h > 1.5 ? 1.2 : w / h > 1 ? 1.5 : 1.8
+
+    // Globe.gl needs double call: globe() returns factory, factory(container) creates instance
+    const g = globe()($$container)
+      .width(w).height(h)
+      .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+      .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
+      .pointOfView({ lat: $$target.lat, lng: $$target.lng, altitude: alt })
+
+    // Use watch pattern - create computed signals that only fire when value actually changes
+    let prevTargetStr = ''
+    let prevPlacesStr = ''
+
+    // Watch target
+    effect(() => {
+      const target = $$target
+      const targetStr = JSON.stringify(target)
+      if (targetStr !== prevTargetStr && target.lat !== undefined && target.lng !== undefined) {
+        prevTargetStr = targetStr
+        const w = $$container.offsetWidth
+        const h = $$container.offsetHeight
+        const alt = w / h > 1.5 ? 1.2 : w / h > 1 ? 1.5 : 1.8
+        g.pointOfView({ lat: target.lat, lng: target.lng, altitude: alt }, 2000)
+      }
+    })
+
+    // Watch places
+    effect(() => {
+      const placesStr = JSON.stringify($$places || {})
+      if (placesStr !== prevPlacesStr) {
+        prevPlacesStr = placesStr
+        const places = JSON.parse(placesStr)
+        const entries = Object.entries(places)
+        if (entries.length === 0) {
+          g.htmlElementsData([])
+          return
+        }
+        g.htmlElementsData(
+          entries.map(([name, coords], i) => ({ ...coords, name, zIndex: i }))
+        )
+          .htmlLat(d => d.lat)
+          .htmlLng(d => d.lng)
+          .htmlElement(d => {
+            const wrapper = document.createElement('div')
+            wrapper.className = 'marker-wrapper'
+            wrapper.style.cursor = 'pointer'
+            wrapper.style.pointerEvents = 'auto'
+            wrapper.style.zIndex = d.zIndex
+
+            const icon = document.createElement('div')
+            icon.className = 'marker-icon'
+            icon.style.width = '32px'
+            icon.style.height = '32px'
+            icon.innerHTML = markerSvg
+
+            const label = document.createElement('div')
+            label.className = 'marker-label'
+            label.textContent = d.name
+
+            wrapper.appendChild(icon)
+            wrapper.appendChild(label)
+
+            // Handle marker click
+            wrapper.addEventListener('click', (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              el.dispatchEvent(new CustomEvent('marker-click', {
+                detail: {
+                  name: d.name,
+                  lat: d.lat,
+                  lng: d.lng
+                },
+                bubbles: true,
+                composed: true
+              }))
+            })
+
+            return wrapper
+          })
+      }
+    })
+
+    // Cleanup on disconnect
+    onCleanup(() => g?._destructor?.())
+  </script>
+
+  <style>
+    :host {
+      display: block;
+      width: 100%;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .globe-container {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    .marker-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transform: translate(-50%, -100%);
+      position: relative;
+      z-index: 1;
+
+      .marker-icon {
+        width: 32px;
+        height: 32px;
+        color: #9333ea;
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+
+        svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+      }
+
+      .marker-label {
+        margin-top: 4px;
+        padding: 4px 8px;
+        background: linear-gradient(135deg, #9333ea, #7c3aed);
+        color: white;
+        border-radius: 4px;
+        font-size: 12px;
+        white-space: nowrap;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        font-weight: 600;
+
+        &:hover {
+          background: linear-gradient(135deg, var(--purple-10), var(--purple-11));
+          transform: scale(1.05);
+          box-shadow: var(--shadow-4);
+        }
+      }
+    }
+  </style>
+
+  <div class="globe-container" data-ref="container"></div>
+</template>

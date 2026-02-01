@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: wildlive
+    region: frankfurt
+    runtime: node
+    plan: free
+    rootDir: wildlive
+    buildCommand: bun install && bun run build:client
+    startCommand: bun run dev:server
+    healthCheckPath: /
+    envVars:
+      - key: BUN_VERSION
+        value: "1.3.8"
+      - key: PORT
+        value: "10000"

@@ -1,0 +1,29 @@
+{
+  "name": "wildlive",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build:client": "bun build static/main.ts --outfile static/main.js",
+    "dev:client": "bun build static/main.ts --outfile static/main.js --watch",
+    "dev:server": "bun run --hot src/index.tsx",
+    "dev": "bun run dev:client & bun run dev:server",
+    "test": "bun test tests/unit",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "lint": "biome check .",
+    "format": "biome format . --write"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.13",
+    "@playwright/test": "^1.58.1",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@starfederation/datastar-sdk": "^1.0.0-RC.3",
+    "hono": "^4.11.7"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(mise install:*)",
+      "Bash(mise trust:*)",
+      "WebFetch(domain:hono.dev)",
+      "Bash(bun create:*)",
+      "Bash(bun add:*)",
+      "Bash(bun remove:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.browserstack.com)",
+      "WebFetch(domain:playwright.dev)",
+      "Bash(bunx playwright install:*)",
+      "Bash(make test:*)",
+      "Bash(bun test:*)",
+      "Bash(bunx playwright test:*)",
+      "Bash(npx playwright test:*)",
+      "Bash(./node_modules/.bin/playwright test:*)",
+      "Bash(node:*)",
+      "Bash(make test-e2e:*)",
+      "Bash(bunx biome:*)",
+      "Bash(ls:*)",
+      "Bash(bun run lint:*)",
+      "Bash(find:*)",
+      "Bash(make lint:*)",
+      "Bash(make format:*)",
+      "WebFetch(domain:data-star.dev)",
+      "WebFetch(domain:render.com)",
+      "WebFetch(domain:bun.com)",
+      "WebFetch(domain:www.svgrepo.com)"
+    ]
+  }
+}

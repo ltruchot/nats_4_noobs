@@ -1,0 +1,19 @@
+# Dependencies
+node_modules
+
+# Build output
+wildlive/static/main.js
+
+# Proprietary
+wildlive/lib/datastar.js
+
+# Environment
+.env
+.env.*
+
+# Playwright
+test-results
+playwright-report
+
+# System
+.DS_Store
