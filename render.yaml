@@ -6,7 +6,7 @@ services:
     plan: free
     rootDir: wildlive
     buildCommand: bun install && bun run build:client
-    startCommand: bun run dev:server
+    startCommand: bun run start
     healthCheckPath: /
     envVars:
       - key: BUN_VERSION

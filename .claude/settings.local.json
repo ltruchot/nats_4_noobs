@@ -28,7 +28,8 @@
       "WebFetch(domain:data-star.dev)",
       "WebFetch(domain:render.com)",
       "WebFetch(domain:bun.com)",
-      "WebFetch(domain:www.svgrepo.com)"
+      "WebFetch(domain:www.svgrepo.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

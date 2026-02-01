@@ -8,6 +8,7 @@
     "dev:client": "bun build static/main.ts --outfile static/main.js --watch",
     "dev:server": "bun run --hot src/index.tsx",
     "dev": "bun run dev:client & bun run dev:server",
+    "start": "bun run src/index.tsx",
     "test": "bun test tests/unit",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
