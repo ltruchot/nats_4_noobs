@@ -1,1 +1,1 @@
-import '../lib/datastar.js'
+import '../lib/vendor.js'

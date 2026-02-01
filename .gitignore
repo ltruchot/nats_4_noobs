@@ -5,7 +5,7 @@ node_modules
 wildlive/static/main.js
 
 # Proprietary
-wildlive/lib/datastar.js
+wildlive/lib/vendor.js
 
 # Environment
 .env
