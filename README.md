@@ -1,6 +1,8 @@
 # Wildlive
 
-Globe 3D interactif avec SSE temps réel.
+Interactive 3D globe with real-time SSE streaming.
+
+**Demo:** https://wildlive.onrender.com/
 
 ## Stack
 
@@ -9,7 +11,7 @@ Globe 3D interactif avec SSE temps réel.
 - **Frontend**: Datastar + Rocket (Web Components)
 - **3D**: Globe.gl / Three.js
 
-## Développement
+## Development
 
 ```bash
 make install
@@ -24,6 +26,6 @@ make test-e2e    # E2E Playwright
 make lint        # Biome
 ```
 
-## Déploiement
+## Deployment
 
-Render.com avec `render.yaml`.
+Render.com with `render.yaml`.
