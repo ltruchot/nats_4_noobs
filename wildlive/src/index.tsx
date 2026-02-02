@@ -8,19 +8,20 @@ import { Home } from './views/Home'
 let index = 0
 const subscribers = new Set<ServerSentEventGenerator>()
 
+// Fake poller - every second, push city info to all subscribers
 setInterval(() => {
+  // extract city info
   const city = cities[index % cities.length]
   if (!city) return
   const { lat, lng, name } = city
+
+  // push city info to all subscribers
   for (const stream of subscribers) {
-    try {
-      stream.patchSignals(JSON.stringify({ places: { [name]: { lat, lng } } }))
-    } catch {
-      subscribers.delete(stream)
-    }
+    stream.patchSignals(JSON.stringify({ places: { [name]: { lat, lng } } }))
   }
   index++
 }, 1000)
+
 
 const app = new Hono()
 
