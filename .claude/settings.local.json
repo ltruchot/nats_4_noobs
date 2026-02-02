@@ -29,7 +29,10 @@
       "WebFetch(domain:render.com)",
       "WebFetch(domain:bun.com)",
       "WebFetch(domain:www.svgrepo.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:cdn.jsdelivr.net)",
+      "Bash(bun run build:client:*)",
+      "Bash(gzip:*)"
     ]
   }
 }

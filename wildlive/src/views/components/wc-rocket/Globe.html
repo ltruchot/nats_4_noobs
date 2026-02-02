@@ -1,7 +1,6 @@
 <template data-rocket:rocket-globe
           data-props:target='json|={"lat":40,"lng":-100}'
           data-props:places="json|={}"
-          data-import:globe="https://cdn.jsdelivr.net/npm/globe.gl@2.43.0/+esm"
 >
   <script data-static>
     // biome-ignore lint/correctness/noUnusedVariables: used in main script via Rocket's data-static
@@ -18,8 +17,8 @@
     const h = $$container.offsetHeight
     const alt = w / h > 1.5 ? 1.2 : w / h > 1 ? 1.5 : 1.8
 
-    // Globe.gl needs double call: globe() returns factory, factory(container) creates instance
-    const g = globe()($$container)
+    // Globe.gl needs double call: Globe() returns factory, factory(container) creates instance
+    const g = window.Globe()($$container)
       .width(w).height(h)
       .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
       .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
