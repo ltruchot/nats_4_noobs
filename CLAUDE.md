@@ -116,6 +116,8 @@ services:
 
 - [ ] **3. Edit root `Makefile`** *(add NATS targets)*
 
+Add `nats nats-stop` to the `.PHONY` line, then add:
+
 ```makefile
 # Start NATS server in background
 nats:
