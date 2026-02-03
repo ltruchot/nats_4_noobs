@@ -170,11 +170,14 @@ Simple fetch that returns observations. We keep `Record<string, any>` for now, w
 type Observation = Record<string, any>
 
 async function getObservations(): Promise<Observation[]> {
-  const res = await fetch('https://api.inaturalist.org/v1/observations?place_id=1&per_page=100&order=desc&photos=true')
+  const apiUrl = 'https://api.inaturalist.org/v1/';
+  const res = await fetch(apiUrl + 'observations?place_id=1&per_page=100&order=desc&photos=true')
   const data = await res.json()
   return data.results
 }
+const observations = await getObservations().then(console.log);
 ```
+
 
 - [ ] **9. Add iNaturalist poller to `src/index.tsx`**
 

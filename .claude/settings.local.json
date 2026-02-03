@@ -36,7 +36,11 @@
       "WebFetch(domain:natsbyexample.com)",
       "WebFetch(domain:docs.nats.io)",
       "WebFetch(domain:community.render.com)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "WebFetch(domain:api.inaturalist.org)",
+      "Bash(curl:*)",
+      "Bash(bun -e:*)",
+      "WebFetch(domain:forum.inaturalist.org)"
     ]
   }
 }
