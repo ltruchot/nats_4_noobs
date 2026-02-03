@@ -40,7 +40,9 @@
       "WebFetch(domain:api.inaturalist.org)",
       "Bash(curl:*)",
       "Bash(bun -e:*)",
-      "WebFetch(domain:forum.inaturalist.org)"
+      "WebFetch(domain:forum.inaturalist.org)",
+      "WebFetch(domain:pyinaturalist.readthedocs.io)",
+      "WebFetch(domain:www.inaturalist.org)"
     ]
   }
 }

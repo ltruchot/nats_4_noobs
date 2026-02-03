@@ -35,13 +35,15 @@ nats_4_noobs/
 
 ## Data Source
 
-**iNaturalist USA API** - Real-time wildlife observations
+**iNaturalist API v2** - `fields` param selects only needed data (~500B vs ~50KB/observation)
 
 ```bash
-curl "https://api.inaturalist.org/v1/observations?place_id=1&per_page=30&order=desc&photos=true"
+curl "https://api.inaturalist.org/v2/observations?place_id=1&per_page=100&order=desc&photos=true&fields=id,species_guess,location,place_guess,geojson,taxon.id,taxon.name,taxon.preferred_common_name,taxon.wikipedia_url,taxon.iconic_taxon_name,photos.id,photos.url"
 ```
 
-Useful place IDs: USA=1, North America=97394, Europe=97391, France=6753
+Types: `wildlive/src/types/inaturalist.ts` | Place IDs: USA=1, Europe=97391, France=6753
+
+Docs: https://api.inaturalist.org/v2/docs/
 
 ## Training Levels
 
@@ -162,67 +164,76 @@ console.log(`Connected to NATS at ${nc.getServer()}`)
 const sc = StringCodec()
 ```
 
-- [ ] **8. In `src/index.tsx`, add a function to fetch iNaturalist**
+- [ ] **8. In `src/index.tsx`, add `fetchObservations`**
 
-Simple fetch that returns observations. We keep `Record<string, any>` for now, we'll type it later.
+Returns mapped array `[{ name, lat, lng, photoUrl }, ...]` ready to publish.
 
 ```typescript
-type Observation = Record<string, any>
+import type { ObservationsResponse } from './types/inaturalist'
 
-async function getObservations(): Promise<Observation[]> {
-  const apiUrl = 'https://api.inaturalist.org/v1/';
-  const res = await fetch(apiUrl + 'observations?place_id=1&per_page=100&order=desc&photos=true')
-  const data = await res.json()
-  return data.results
+const INAT_FIELDS = 'id,species_guess,geojson,taxon.preferred_common_name,photos.url'
+
+async function fetchObservations(idAbove?: number) {
+  const params = new URLSearchParams({
+    place_id: '1',
+    per_page: '100',
+    order: 'desc',
+    photos: 'true',
+    fields: INAT_FIELDS,
+    ...(idAbove && { id_above: String(idAbove) })
+  })
+  const res = await fetch(`https://api.inaturalist.org/v2/observations?${params}`)
+  const data: ObservationsResponse = await res.json()
+
+  return data.results.map(obs => {
+    const [lng, lat] = obs.geojson?.coordinates ?? [0, 0]
+    return {
+      id: obs.id,
+      name: obs.taxon?.preferred_common_name || obs.species_guess || 'Unknown',
+      lat,
+      lng,
+      photoUrl: obs.photos?.[0]?.url
+    }
+  })
 }
-const observations = await getObservations().then(console.log);
+
+// Test it:
+fetchObservations().then(console.log)
 ```
 
+- [ ] **9. Add polling loop + publish to NATS**
 
-- [ ] **9. Add iNaturalist poller to `src/index.tsx`**
+Poll every 10s. forEach to publish each observation.
 
-Poll every 3s. `lastId` avoids re-processing the same observations (the API returns the last 100, not "since last request").
+> **Why bytes?** `Uint8Array` is a JS typed array of 8-bit integers (0-255). NATS, Kafka, and RabbitMQ all use opaque byte arrays for messages. Why? Language agnostic + flexible. The broker never interprets content - it just moves bytes. Your app encodes (object → JSON string → bytes) and decodes (bytes → string → object). Any format works: JSON, Protobuf, raw binary, images...
 
 ```typescript
 let lastId = 0
 
 setInterval(async () => {
-  const observations = await getObservations()
-  for (const obs of observations) {
-    if (obs.id > lastId && obs.location) {
-      console.log(`New: ${obs.species_guess} at ${obs.place_guess}`)
-    }
-  }
-  if (observations.length > 0) {
-    lastId = Math.max(lastId, observations[0].id)
-  }
-}, 3000)
+  const observations = await fetchObservations(lastId || undefined)
+  if (observations.length === 0) return
+
+  lastId = observations[0].id
+  observations.forEach(obs => {
+    // sc.encode: string → Uint8Array (NATS transports bytes)
+    nc.publish('nature.observation', sc.encode(JSON.stringify(obs)))
+  })
+}, 10_000)
 ```
 
-- [ ] **10. Publish to NATS instead of console.log**
-
-Replace `console.log` with `nc.publish`. The message goes to the subject `nature.observation`.
+- [ ] **10. Subscribe to NATS + push to SSE**
 
 ```typescript
-const [lat, lng] = obs.location.split(',').map(Number)
-const payload = { id: obs.id, name: obs.species_guess, lat, lng }
-nc.publish('nature.observation', sc.encode(JSON.stringify(payload)))
-```
-
-- [ ] **11. Replace `setInterval` with NATS subscribe**
-
-Same pattern as cities: one NATS subscription at top level that pushes to all `subscribers`. The `/sse` endpoint stays unchanged.
-
-```typescript
-// Replace the cities setInterval with:
 const sub = nc.subscribe('nature.observation')
 
 ;(async () => {
   for await (const msg of sub) {
-    const { name, lat, lng } = JSON.parse(sc.decode(msg.data))
+    // sc.decode: Uint8Array → string
+    const { id, name, lat, lng, photoUrl } = JSON.parse(sc.decode(msg.data))
     for (const stream of subscribers) {
       try {
-        stream.patchSignals(JSON.stringify({ places: { [name]: { lat, lng } } }))
+        stream.patchSignals(JSON.stringify({ places: { [id]: { name, lat, lng, photoUrl } } }))
       } catch {
         subscribers.delete(stream)
       }
@@ -231,7 +242,7 @@ const sub = nc.subscribe('nature.observation')
 })()
 ```
 
-- [ ] **12. Test the full flow**
+- [ ] **11. Test the full flow**
 
 ```bash
 # Terminal 1

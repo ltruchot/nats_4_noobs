@@ -22,7 +22,6 @@ setInterval(() => {
   index++
 }, 1000)
 
-
 const app = new Hono()
 
 app.get('/', (c) => c.html(<Home />))
