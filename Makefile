@@ -20,3 +20,11 @@ lint:
 
 format:
 	cd wildlive && bun run format
+
+# Start NATS server in background
+nats:
+	docker compose -f nats/docker-compose.yml up -d
+
+# Stop NATS
+nats-stop:
+	docker compose -f nats/docker-compose.yml down
