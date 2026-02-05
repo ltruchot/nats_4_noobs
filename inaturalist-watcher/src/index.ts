@@ -22,7 +22,7 @@ async function ingest() {
 // --- HTTP transport (lvl0) ---
 
 Bun.serve({
-  port: 3001,
+  port: Number(Bun.env.PORT),
   routes: {
     '/last-observations': () => Response.json(buffer.splice(0, Math.ceil(Math.random() * 5))),
   },

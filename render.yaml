@@ -13,6 +13,28 @@ services:
         value: "1.3.8"
       - key: PORT
         value: "10000"
+      - key: WATCHER_URL
+        value: "https://inaturalist-watcher.onrender.com"
+      - key: NATS_URL
+        fromService:
+          name: nats
+          type: pserv
+          property: hostport
+
+  - type: web
+    name: inaturalist-watcher
+    region: frankfurt
+    runtime: node
+    plan: free
+    rootDir: inaturalist-watcher
+    buildCommand: bun install --production
+    startCommand: bun run start
+    healthCheckPath: /last-observations
+    envVars:
+      - key: BUN_VERSION
+        value: "1.3.8"
+      - key: PORT
+        value: "10000"
       - key: NATS_URL
         fromService:
           name: nats
@@ -26,6 +48,3 @@ services:
     plan: starter
     image:
       url: docker.io/library/nats:2.12-alpine
-    envVars:
-      - key: PORT
-        value: "4222"

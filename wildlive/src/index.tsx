@@ -22,11 +22,10 @@ function broadcast({ id, ...place }: Observation) {
 
 // --- Data source: HTTP poll (lvl0) ---
 async function receiveObservations() {
-  console.log('[wildlive] http://localhost:3000 — polling watcher every 1s')
-  const WATCHER_URL = 'http://localhost:3001'
+  console.log(`[wildlive] polling ${Bun.env.WATCHER_URL} every 1s`)
 
   while (true) {
-    const observations = await fetch(`${WATCHER_URL}/last-observations`)
+    const observations = await fetch(`${Bun.env.WATCHER_URL}/last-observations`)
       .then((r) => r.json() as Promise<Observation[]>)
       .catch(() => [] as Observation[])
     for (const obs of observations) broadcast(obs)
