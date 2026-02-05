@@ -1,15 +1,9 @@
-.PHONY: dev dev-fallback app watcher install test test-e2e test-e2e-ui lint format nats nats-stop
+.PHONY: dev app watcher install test test-e2e test-e2e-ui lint format nats nats-stop
 
 # Development - starts watcher + app, Ctrl+C kills both
 dev:
 	@trap 'kill 0' EXIT; \
 	cd inaturalist-watcher && bun run dev & \
-	cd wildlive && bun run dev
-
-# Development with fallback data (no iNaturalist API needed)
-dev-fallback:
-	@trap 'kill 0' EXIT; \
-	cd inaturalist-watcher && bun run dev:fallback & \
 	cd wildlive && bun run dev
 
 # Start app only

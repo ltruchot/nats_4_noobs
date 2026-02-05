@@ -5,4 +5,5 @@ export interface Observation {
   lng: number
   photoUrl?: string | null
   wikiUrl?: string | null
+  observedAt?: string
 }

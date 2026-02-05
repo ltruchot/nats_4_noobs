@@ -47,7 +47,8 @@
       "Bash(bun eval:*)",
       "Bash(bun run:*)",
       "mcp__ide__getDiagnostics",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(head:*)"
     ]
   }
 }

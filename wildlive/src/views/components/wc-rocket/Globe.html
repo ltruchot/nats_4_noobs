@@ -87,7 +87,13 @@
 
             const label = document.createElement('div')
             label.className = 'marker-label'
-            label.textContent = d.name
+            if (d.observedAt) {
+              const time = document.createElement('div')
+              time.className = 'marker-time'
+              time.textContent = d.observedAt
+              label.appendChild(time)
+            }
+            label.append(d.name)
 
             const card = document.createElement('div')
             card.className = 'marker-card'
@@ -181,6 +187,11 @@
         color: white;
         border-radius: 4px 4px 0 0;
         font-size: 12px;
+
+        .marker-time {
+          font-size: 10px;
+          opacity: 0.8;
+        }
         white-space: normal;
         word-break: break-word;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);

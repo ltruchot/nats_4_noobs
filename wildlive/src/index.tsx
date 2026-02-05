@@ -26,7 +26,7 @@ async function receiveObservations() {
   const WATCHER_URL = 'http://localhost:3001'
 
   while (true) {
-    const observations = await fetch(`${WATCHER_URL}/observations`)
+    const observations = await fetch(`${WATCHER_URL}/last-observations`)
       .then((r) => r.json() as Promise<Observation[]>)
       .catch(() => [] as Observation[])
     for (const obs of observations) broadcast(obs)

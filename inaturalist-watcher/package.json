@@ -7,7 +7,6 @@
   "private": true,
   "scripts": {
     "dev": "bun run --hot src/index.ts",
-    "dev:fallback": "FALLBACK=1 bun run --hot src/index.ts",
     "start": "bun run src/index.ts"
   },
   "type": "module"

@@ -1,11 +1,9 @@
 import type { Observation } from '../../types/observation'
-import fallback from './data/fallback.json'
 
 // --- Ingestion ---
 
 let buffer: Observation[] = []
 let lastId = 0
-let fallbackUsed = false
 
 async function ingest() {
   try {
@@ -17,11 +15,7 @@ async function ingest() {
     buffer.push(...observations)
     console.log(`+${observations.length} ingested`)
   } catch {
-    if (!fallbackUsed) {
-      fallbackUsed = true
-      buffer.push(...fallback)
-      console.log(`API down — loaded ${fallback.length} fallback observations`)
-    }
+    console.error('[watcher] fetch failed')
   }
 }
 
@@ -29,19 +23,14 @@ async function ingest() {
 
 Bun.serve({
   port: 3001,
-  fetch() {
-    return Response.json(buffer.splice(0, 10))
+  routes: {
+    '/last-observations': () => Response.json(buffer.splice(0, Math.ceil(Math.random() * 5))),
   },
 })
 console.log('[inaturalist-watcher] http://localhost:3001')
 
-if (Bun.env.FALLBACK) {
-  buffer = [...fallback]
-  console.log(`[fallback] loaded ${fallback.length} observations`)
-} else {
-  setInterval(ingest, 15_000)
-  ingest()
-}
+setInterval(ingest, 15_000)
+ingest()
 
 // --- iNaturalist API ---
 
@@ -54,13 +43,14 @@ function toObservation(raw: any): Observation {
     lng,
     photoUrl: raw.photos?.[0]?.url,
     wikiUrl: raw.taxon?.wikipedia_url,
+    observedAt: raw.created_at?.match(/T(\d{2}:\d{2}:\d{2})/)?.[1],
   }
 }
 
 async function fetchObservations(idAbove: number) {
   const INAT_URL = 'https://api.inaturalist.org/v2/observations'
   const INAT_FIELDS =
-    'id,species_guess,geojson,taxon.preferred_common_name,taxon.wikipedia_url,photos.url'
+    'id,species_guess,geojson,created_at,taxon.preferred_common_name,taxon.wikipedia_url,photos.url'
   const params = new URLSearchParams({
     per_page: '150',
     order: 'desc',

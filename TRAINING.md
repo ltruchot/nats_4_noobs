@@ -27,6 +27,8 @@ nats_4_noobs/
 │   └── src/index.ts             # Polls iNaturalist, serves HTTP (lvl0) → publishes NATS (lvl1)
 ├── wildlive/
 │   └── src/                     # Bun + Hono globe app
+├── types/
+│   └── observation.ts           # Shared Observation type
 ├── Makefile                     # Root commands: make watcher, make app, make dev
 └── TRAINING.md
 ```
@@ -39,10 +41,10 @@ nats_4_noobs/
 **iNaturalist API v2** - `fields` param selects only needed data (~500B vs ~50KB/observation)
 
 ```bash
-curl "https://api.inaturalist.org/v2/observations?place_id=1&per_page=100&order=desc&photos=true&fields=id,species_guess,geojson,taxon.preferred_common_name,photos.url"
+curl "https://api.inaturalist.org/v2/observations?per_page=5&order=desc&photos=true&fields=id,species_guess,geojson,created_at,taxon.preferred_common_name,taxon.wikipedia_url,photos.url"
 ```
 
-Types: `wildlive/src/types/inaturalist.ts` | Place IDs: USA=1, Europe=97391, France=6753
+Types: `types/observation.ts`
 
 Docs: https://api.inaturalist.org/v2/docs/
 
@@ -71,7 +73,7 @@ Docs: https://api.inaturalist.org/v2/docs/
 ┌──────────────┐    SSE     ┌──────────────────┐  HTTP poll  ┌──────────────────┐
 │   Browser    │◀───────────│     wildlive     │────────────▶│ inaturalist-     │
 │  (Globe.gl)  │            │   :3000 (Hono)   │◀────────────│ watcher          │
-└──────────────┘            └──────────────────┘   JSON      │ :3001 (Hono)     │
+└──────────────┘            └──────────────────┘   JSON      │ :3001            │
                                                              └────────┬─────────┘
                                                                       ▼
                                                               iNaturalist API
@@ -86,7 +88,7 @@ make app       # Terminal 2
 - It works, **but:**
   - Wildlive must know the watcher's URL → **coupling**
   - Only one consumer can drain the buffer → **no fan-out**
-  - Polling /10s = up to 10s latency → **not real-time**
+  - Polling = up to 1s latency → **not real-time**
   - If watcher restarts, buffer is lost → **no persistence**
 
 ### lvl1 - Pub/Sub Basics 📋
@@ -137,9 +139,9 @@ cd ../wildlive && bun add nats
 
 - [ ] **4. inaturalist-watcher: publish to NATS instead of HTTP**
 
-`toObservation()` and `ingest()` stay untouched. We only replace the **transport section** at the bottom.
+`toObservation()` and `fetchObservations()` stay untouched. We modify `ingest()` and replace the **transport section**.
 
-`nc` = NATS Connection, our pub/sub client. `sc` = StringCodec, encodes/decodes messages (NATS transports bytes).
+`nc` = NATS Connection. `sc` = StringCodec, encodes/decodes messages (NATS transports bytes).
 
 > **Why bytes?** NATS, Kafka, RabbitMQ — all transport opaque byte arrays (`Uint8Array`). Language agnostic + flexible. The broker never interprets content — it just moves bytes. Your app encodes (object → JSON string → bytes) and decodes (bytes → string → object).
 
@@ -151,60 +153,61 @@ In `inaturalist-watcher/src/index.ts`:
 import { connect, StringCodec } from 'nats'
 ```
 
-**b)** In `ingest()`, replace `buffer.push(...observations)` with publishing each observation:
+**b)** Delete `let buffer: Observation[] = []` — observations go straight to NATS.
+
+**c)** In `ingest()`, replace `buffer.push(...observations)` with:
 
 ```typescript
-    const sc = StringCodec()
     for (const obs of observations) {
       nc.publish('nature.observation', sc.encode(JSON.stringify(obs)))
     }
 ```
 
-**c)** Replace `// --- HTTP transport (lvl0) ---` (everything below) with:
+**d)** Replace `// --- HTTP transport (lvl0) ---` section (up to `// --- iNaturalist API ---`) with:
 
 ```typescript
 // --- NATS transport (lvl1) ---
 
 const nc = await connect({ servers: 'localhost:4222' })
+const sc = StringCodec()
 console.log(`[watcher] connected to NATS at ${nc.getServer()}`)
 
-if (Bun.env.FALLBACK) {
-  buffer = [...fallback]
-  console.log(`[fallback] loaded ${fallback.length} observations`)
-} else {
-  setInterval(ingest, 15_000)
-  ingest()
-}
+setInterval(ingest, 15_000)
+ingest()
 ```
+
+> `nc` and `sc` are used in `ingest()` above — works because `ingest()` is only **called** below, after initialization.
 
 - [ ] **5. wildlive: subscribe instead of HTTP poll**
 
-Same idea — `broadcast()` and Hono routes stay untouched. Only the data source changes.
+`broadcast()` and Hono routes stay untouched. Only the data source changes.
 
 In `wildlive/src/index.tsx`:
 
-**a)** Add the `nats` import:
+**a)** Add the `nats` import at the top:
 
 ```typescript
 import { connect, StringCodec } from 'nats'
-const nc = await connect({ servers: 'localhost:4222' })
-const sc = StringCodec()
 ```
 
-**b)** Replace `// --- Data source: HTTP poll (lvl0) ---` (the whole section) with:
+**b)** Replace `// --- Data source: HTTP poll (lvl0) ---` (the whole section + the `receiveObservations()` call) with:
 
 ```typescript
 // --- Data source: NATS subscribe (lvl1) ---
+
+const nc = await connect({ servers: 'localhost:4222' })
+const sc = StringCodec()
+
 async function receiveObservations() {
   console.log(`[wildlive] connected to NATS at ${nc.getServer()}`)
-  
-  // sc.decode: Uint8Array → string — same broadcast() as HTTP
   for await (const msg of nc.subscribe('nature.observation')) {
     const obs = JSON.parse(sc.decode(msg.data)) as Observation
     broadcast(obs)
   }
 }
 
+receiveObservations()
+```
 
 - [ ] **6. Test the full flow**
 
@@ -227,7 +230,7 @@ make app
 
 | lvl0 (HTTP) | lvl1 (NATS) |
 |-------------|-------------|
-| Watcher exposes HTTP endpoint | Watcher drip-publishes to NATS |
+| Watcher exposes HTTP endpoint | Watcher publishes to NATS |
 | Wildlive polls watcher via HTTP | Wildlive subscribes from NATS |
 | Wildlive knows watcher URL → **coupled** | Neither knows the other → **decoupled** |
 | One consumer drains buffer | Any number of subscribers |
