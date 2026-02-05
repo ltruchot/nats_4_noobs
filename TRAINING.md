@@ -161,15 +161,7 @@ import { connect, StringCodec } from 'nats'
 
 **b)** Delete `let buffer: Observation[] = []` — observations go straight to NATS.
 
-**c)** In `ingest()`, replace `buffer.push(...observations)` with:
-
-```typescript
-    for (const obs of observations) {
-      nc.publish('nature.observation', sc.encode(JSON.stringify(obs)))
-    }
-```
-
-**d)** Replace `// --- HTTP transport (lvl0) ---` section (up to `// --- iNaturalist API ---`) with:
+**c)** Replace `// --- HTTP transport (lvl0) ---` section (up to `// --- iNaturalist API ---`) with:
 
 ```typescript
 // --- NATS transport (lvl1) ---
@@ -182,7 +174,15 @@ setInterval(ingest, 15_000)
 ingest()
 ```
 
-> `nc` and `sc` are used in `ingest()` above — works because `ingest()` is only **called** below, after initialization.
+**d)** In `ingest()`, replace `buffer.push(...observations)` with:
+
+```typescript
+    for (const obs of observations) {
+      nc.publish('nature.observation', sc.encode(JSON.stringify(obs)))
+    }
+```
+
+> `nc` and `sc` are declared below `ingest()` in the file — works because `ingest()` is only **called** after initialization.
 
 - [ ] **5. wildlive: subscribe instead of HTTP poll**
 
