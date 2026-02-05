@@ -28,4 +28,14 @@ test.describe('Home Page', () => {
     const stylesheet = page.locator('link[rel="stylesheet"]')
     await expect(stylesheet).toHaveAttribute('href', '/style.css')
   })
+
+  test('should display wildlife observations from watcher', async ({
+    page,
+  }) => {
+    await page.goto('/')
+
+    // Wait for watcher poll (10s) + wildlive poll (10s) + rendering
+    const marker = page.locator('.marker-wrapper')
+    await expect(marker.first()).toBeVisible({ timeout: 30000 })
+  })
 })

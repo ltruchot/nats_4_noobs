@@ -22,12 +22,13 @@ NATS is a **single binary** (`nats-server`) that acts as a message router. That'
 ```
 nats_4_noobs/
 ├── nats/
-│   └── docker-compose.yml   # NATS server (evolves per level)
+│   └── docker-compose.yml       # NATS server (evolves per level)
+├── inaturalist-watcher/
+│   └── src/index.ts             # Polls iNaturalist, serves HTTP (lvl0) → publishes NATS (lvl1)
 ├── wildlive/
-│   └── src/                 # Bun + Hono app
-├── Makefile                 # Root commands: make nats, make app, make dev
-├── CLAUDE.md                # This file
-└── README.md
+│   └── src/                     # Bun + Hono globe app
+├── Makefile                     # Root commands: make watcher, make app, make dev
+└── TRAINING.md
 ```
 
 - **main branch**: Final state with all NATS features
@@ -38,7 +39,7 @@ nats_4_noobs/
 **iNaturalist API v2** - `fields` param selects only needed data (~500B vs ~50KB/observation)
 
 ```bash
-curl "https://api.inaturalist.org/v2/observations?place_id=1&per_page=100&order=desc&photos=true&fields=id,species_guess,location,place_guess,geojson,taxon.id,taxon.name,taxon.preferred_common_name,taxon.wikipedia_url,taxon.iconic_taxon_name,photos.id,photos.url"
+curl "https://api.inaturalist.org/v2/observations?place_id=1&per_page=100&order=desc&photos=true&fields=id,species_guess,geojson,taxon.preferred_common_name,photos.url"
 ```
 
 Types: `wildlive/src/types/inaturalist.ts` | Place IDs: USA=1, Europe=97391, France=6753
@@ -47,10 +48,10 @@ Docs: https://api.inaturalist.org/v2/docs/
 
 ## Training Levels
 
-| Level | Concept | Frontend Interaction | What You Learn |
-|-------|---------|---------------------|----------------|
-| **lvl0** | Baseline | Globe + SSE streaming US cities | Working app, no NATS yet |
-| **lvl1** | Pub/Sub basics | iNaturalist points on globe | First NATS connection |
+| Level | Concept | Architecture | What You Learn |
+|-------|---------|-------------|----------------|
+| **lvl0** | Baseline | Watcher → HTTP → Wildlive | Starting point, no NATS yet |
+| **lvl1** | Pub/Sub basics | Watcher → NATS → Wildlive | First NATS connection, decoupling |
 | **lvl2** | Subjects | Points colored by taxon | Message routing |
 | **lvl3** | Wildcards + filters | Toggle buttons per taxon | Dynamic subscribe/unsubscribe |
 | **lvl4** | Request/Reply | Click point → species details | Request/response pattern |
@@ -60,47 +61,53 @@ Docs: https://api.inaturalist.org/v2/docs/
 
 ## Level Details
 
-### lvl0 - Baseline ✅
+### lvl0 - Starting Point ✅
+
+- A service (`inaturalist-watcher` :3001) regularly produces data (wildlife observations)
+- Our app (`wildlive` :3000) wants to display it on a 3D globe
+- Current approach: **wildlive polls the watcher via HTTP** every 1s
 
 ```
-┌─────────────────────────────────────────────────────┐
-│              🌍 Globe.gl                            │
-│         Points appearing via SSE stream             │
-│            (US cities mock data)                    │
-└─────────────────────────────────────────────────────┘
+┌──────────────┐    SSE     ┌──────────────────┐  HTTP poll  ┌──────────────────┐
+│   Browser    │◀───────────│     wildlive     │────────────▶│ inaturalist-     │
+│  (Globe.gl)  │            │   :3000 (Hono)   │◀────────────│ watcher          │
+└──────────────┘            └──────────────────┘   JSON      │ :3001 (Hono)     │
+                                                             └────────┬─────────┘
+                                                                      ▼
+                                                              iNaturalist API
 ```
 
-- Working Bun + Hono + Datastar app
-- SSE endpoint streams coordinates to frontend
-- Globe.gl renders points in real-time
-- No NATS yet - this is the starting point
+```bash
+make watcher   # Terminal 1
+make app       # Terminal 2
+# → http://localhost:3000
+```
+
+- It works, **but:**
+  - Wildlive must know the watcher's URL → **coupling**
+  - Only one consumer can drain the buffer → **no fan-out**
+  - Polling /10s = up to 10s latency → **not real-time**
+  - If watcher restarts, buffer is lost → **no persistence**
 
 ### lvl1 - Pub/Sub Basics 📋
 
 ```
-┌──────────────┐     ┌──────────┐     ┌──────────────┐
-│ iNaturalist  │────▶│   NATS   │────▶│    Globe     │
-│   poller     │     │  Server  │     │  (frontend)  │
-└──────────────┘     └──────────┘     └──────────────┘
+┌──────────────────┐                        ┌──────────────┐
+│  inaturalist-    │                        │   wildlive   │
+│  watcher         │                        │   (globe)    │
+│  (publisher)     │                        │ (subscriber) │
+└────────┬─────────┘                        └──────▲───────┘
+         │           ┌──────────────┐              │
+         └──────────▶│  NATS Server │──────────────┘
+          publish    │  :4222       │   subscribe
+                     └──────────────┘
 ```
 
-**Goal:** Replace direct SSE push with NATS pub/sub in between.
+**Goal:** Watcher publishes to NATS, wildlive subscribes. No more HTTP between the two.
 
 #### Checklist
 
-- [x] **1. Setup monorepo structure** *(already present)*
-
-```
-nats_4_noobs/
-├── nats/
-│   └── docker-compose.yml    # NATS server config (evolves per level)
-├── wildlive/
-│   └── ...                   # Bun app
-├── Makefile                  # Root commands
-└── CLAUDE.md
-```
-
-- [x] **2. Create `nats/docker-compose.yml`** *(already present)*
+- [x] **1. NATS server already configured** *(docker-compose.yml present)*
 
 ```yaml
 # nats/docker-compose.yml
@@ -112,193 +119,136 @@ services:
       - "4222:4222"   # Client connections
       - "8222:8222"   # Monitoring UI
     command: ["--http_port", "8222"]
-    # lvl6+ will add: --jetstream --store_dir /data
-    # lvl6+ will add: volumes for persistence
 ```
 
-- [ ] **3. Edit root `Makefile`** *(add NATS targets)*
-
-Add `nats nats-stop` to the `.PHONY` line, then add:
-
-```makefile
-# Start NATS server in background
-nats:
-	docker compose -f nats/docker-compose.yml up -d
-
-# Stop NATS
-nats-stop:
-	docker compose -f nats/docker-compose.yml down
-```
-
-- [ ] **4. Test NATS is running**
+- [ ] **2. Start NATS + verify**
 
 ```bash
 make nats
 # Open http://localhost:8222 → NATS monitoring dashboard
 ```
 
-- [ ] **5. Install NATS client package**
+- [ ] **3. Install NATS client in both services**
 
 ```bash
-cd wildlive
-bun add nats
+cd inaturalist-watcher && bun add nats
+cd ../wildlive && bun add nats
 ```
 
-- [ ] **6. Create `.env` file**
+- [ ] **4. inaturalist-watcher: publish to NATS instead of HTTP**
 
-```bash
-# wildlive/.env
-NATS_URL=localhost:4222
-```
-
-- [ ] **7. In `src/index.tsx`, add NATS connection**
+`toObservation()` and `ingest()` stay untouched. We only replace the **transport section** at the bottom.
 
 `nc` = NATS Connection, our pub/sub client. `sc` = StringCodec, encodes/decodes messages (NATS transports bytes).
 
+> **Why bytes?** NATS, Kafka, RabbitMQ — all transport opaque byte arrays (`Uint8Array`). Language agnostic + flexible. The broker never interprets content — it just moves bytes. Your app encodes (object → JSON string → bytes) and decodes (bytes → string → object).
+
+In `inaturalist-watcher/src/index.ts`:
+
+**a)** Add the `nats` import at the top:
+
 ```typescript
 import { connect, StringCodec } from 'nats'
+```
 
-const nc = await connect({ servers: process.env.NATS_URL })
-console.log(`Connected to NATS at ${nc.getServer()}`)
+**b)** In `ingest()`, replace `buffer.push(...observations)` with publishing each observation:
 
+```typescript
+    const sc = StringCodec()
+    for (const obs of observations) {
+      nc.publish('nature.observation', sc.encode(JSON.stringify(obs)))
+    }
+```
+
+**c)** Replace `// --- HTTP transport (lvl0) ---` (everything below) with:
+
+```typescript
+// --- NATS transport (lvl1) ---
+
+const nc = await connect({ servers: 'localhost:4222' })
+console.log(`[watcher] connected to NATS at ${nc.getServer()}`)
+
+if (Bun.env.FALLBACK) {
+  buffer = [...fallback]
+  console.log(`[fallback] loaded ${fallback.length} observations`)
+} else {
+  setInterval(ingest, 15_000)
+  ingest()
+}
+```
+
+- [ ] **5. wildlive: subscribe instead of HTTP poll**
+
+Same idea — `broadcast()` and Hono routes stay untouched. Only the data source changes.
+
+In `wildlive/src/index.tsx`:
+
+**a)** Add the `nats` import:
+
+```typescript
+import { connect, StringCodec } from 'nats'
+const nc = await connect({ servers: 'localhost:4222' })
 const sc = StringCodec()
 ```
 
-- [ ] **8. In `src/index.tsx`, add `fetchObservations`**
-
-Returns mapped array `[{ name, lat, lng, photoUrl }, ...]` ready to publish.
+**b)** Replace `// --- Data source: HTTP poll (lvl0) ---` (the whole section) with:
 
 ```typescript
-import type { ObservationsResponse } from './types/inaturalist'
-
-const INAT_FIELDS = 'id,species_guess,geojson,taxon.preferred_common_name,photos.url'
-
-async function fetchObservations(idAbove?: number) {
-  const params = new URLSearchParams({
-    place_id: '1',
-    per_page: '100',
-    order: 'desc',
-    photos: 'true',
-    fields: INAT_FIELDS,
-    ...(idAbove && { id_above: String(idAbove) })
-  })
-  const res = await fetch(`https://api.inaturalist.org/v2/observations?${params}`)
-  const data: ObservationsResponse = await res.json()
-
-  return data.results.map(obs => {
-    const [lng, lat] = obs.geojson?.coordinates ?? [0, 0]
-    return {
-      id: obs.id,
-      name: obs.taxon?.preferred_common_name || obs.species_guess || 'Unknown',
-      lat,
-      lng,
-      photoUrl: obs.photos?.[0]?.url
-    }
-  })
+// --- Data source: NATS subscribe (lvl1) ---
+async function receiveObservations() {
+  console.log(`[wildlive] connected to NATS at ${nc.getServer()}`)
+  
+  // sc.decode: Uint8Array → string — same broadcast() as HTTP
+  for await (const msg of nc.subscribe('nature.observation')) {
+    const obs = JSON.parse(sc.decode(msg.data)) as Observation
+    broadcast(obs)
+  }
 }
 
-// Test it:
-fetchObservations().then(console.log)
-```
 
-- [ ] **9. Add polling loop + publish to NATS**
-
-Poll every 10s. forEach to publish each observation.
-
-> **Why bytes?** `Uint8Array` is a JS typed array of 8-bit integers (0-255). NATS, Kafka, and RabbitMQ all use opaque byte arrays for messages. Why? Language agnostic + flexible. The broker never interprets content - it just moves bytes. Your app encodes (object → JSON string → bytes) and decodes (bytes → string → object). Any format works: JSON, Protobuf, raw binary, images...
-
-```typescript
-let lastId = 0
-
-setInterval(async () => {
-  const observations = await fetchObservations(lastId || undefined)
-  if (observations.length === 0) return
-
-  lastId = observations[0].id
-  observations.forEach(obs => {
-    // sc.encode: string → Uint8Array (NATS transports bytes)
-    nc.publish('nature.observation', sc.encode(JSON.stringify(obs)))
-  })
-}, 10_000)
-```
-
-- [ ] **10. Subscribe to NATS + push to SSE**
-
-```typescript
-const sub = nc.subscribe('nature.observation')
-
-;(async () => {
-  for await (const msg of sub) {
-    // sc.decode: Uint8Array → string
-    const { id, name, lat, lng, photoUrl } = JSON.parse(sc.decode(msg.data))
-    for (const stream of subscribers) {
-      try {
-        stream.patchSignals(JSON.stringify({ places: { [id]: { name, lat, lng, photoUrl } } }))
-      } catch {
-        subscribers.delete(stream)
-      }
-    }
-  }
-})()
-```
-
-- [ ] **11. Test the full flow**
+- [ ] **6. Test the full flow**
 
 ```bash
-# Terminal 1
+# Terminal 1 — NATS
 make nats
 
-# Terminal 2
-make dev
+# Terminal 2 — Watcher (publishes to NATS)
+make watcher
+
+# Terminal 3 — Wildlive (subscribes from NATS)
+make app
 ```
 
 **Verify:**
-- http://localhost:3000 → Globe with USA wildlife observations
-- http://localhost:8222 → NATS monitoring dashboard (connections, messages)
+- http://localhost:3000 → Globe with worldwide wildlife observations
+- http://localhost:8222 → NATS monitoring (connections: 2, messages flowing)
 
-#### Architecture After lvl1
+#### Before / After
+
+| lvl0 (HTTP) | lvl1 (NATS) |
+|-------------|-------------|
+| Watcher exposes HTTP endpoint | Watcher drip-publishes to NATS |
+| Wildlive polls watcher via HTTP | Wildlive subscribes from NATS |
+| Wildlive knows watcher URL → **coupled** | Neither knows the other → **decoupled** |
+| One consumer drains buffer | Any number of subscribers |
+| ~1s delay (polling) | Real-time push (< 1ms) |
+
+#### Architecture lvl1
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Bun Server                           │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐    ┌─────────────────┐                │
-│  │  Publisher      │    │  Subscriber     │                │
-│  │  (iNaturalist)  │    │  (SSE push)     │                │
-│  └────────┬────────┘    └────────▲────────┘                │
-│           │                      │                          │
-│           │    nature.observation│                          │
-│           ▼                      │                          │
-│  ┌───────────────────────────────┴──────┐                  │
-│  │              NATS Server             │ ← Docker         │
-│  │           localhost:4222             │                  │
-│  └──────────────────────────────────────┘                  │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────┐                    ┌──────────────────┐
+│ inaturalist-     │                    │    wildlive      │
+│ watcher          │                    │    (Hono + SSE)  │
+│ (poll + publish) │                    │ (subscribe + SSE)│
+└────────┬─────────┘                    └────────▲─────────┘
+         │                                       │
+         │         nature.observation            │
+         ▼                                       │
+┌────────────────────────────────────────────────┴──────┐
+│                    NATS Server                        │
+│                 localhost:4222                  Docker │
+└───────────────────────────────────────────────────────┘
 ```
-
-#### What Changed from lvl0
-
-| Before (lvl0) | After (lvl1) |
-|---------------|--------------|
-| Direct `setInterval` → SSE | Publisher → NATS → Subscriber → SSE |
-| US cities mock data | Real iNaturalist USA API |
-| No decoupling | Publisher/Subscriber decoupled |
-
-#### Environment Variables
-
-```bash
-# .env (optional, defaults to localhost)
-NATS_URL=localhost:4222
-```
-
-#### Production Note (Render/Fly.io)
-
-For production, options are:
-1. **Synadia Cloud** (managed NATS): `NATS_URL=tls://connect.ngs.global`
-2. **Sidecar Docker** on Render: Deploy `nats/docker-compose.yml` as private service
-3. **Fly.io**: Deploy NATS as separate app with internal networking
-
-The `docker-compose.yml` will evolve at each level (JetStream, volumes, etc.)
 
 ### lvl2 - Subjects 📋
 
@@ -470,16 +420,19 @@ docker run -p 4222:4222 nats:latest --jetstream
 
 ```bash
 # Install dependencies
-cd wildlive && bun install
+make install
 
-# Option A: Two terminals
+# lvl0: Two terminals
+make watcher       # Terminal 1 - iNaturalist poller (:3001)
+make app           # Terminal 2 - Globe app (:3000)
+
+# lvl1+: Three terminals
 make nats          # Terminal 1 - NATS server
-make app           # Terminal 2 - Bun app
-
-# Option B: Single command
-make dev           # NATS background + app foreground
+make watcher       # Terminal 2 - Publisher
+make app           # Terminal 3 - Subscriber
 
 # Other commands
 make nats-stop     # Stop NATS
-make nats-logs     # View NATS logs
+make lint          # Biome lint
+make test          # Unit tests
 ```

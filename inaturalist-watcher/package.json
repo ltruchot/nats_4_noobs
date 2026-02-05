@@ -1,0 +1,14 @@
+{
+  "name": "inaturalist-watcher",
+  "module": "src/index.ts",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "private": true,
+  "scripts": {
+    "dev": "bun run --hot src/index.ts",
+    "dev:fallback": "FALLBACK=1 bun run --hot src/index.ts",
+    "start": "bun run src/index.ts"
+  },
+  "type": "module"
+}

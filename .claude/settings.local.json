@@ -42,7 +42,12 @@
       "Bash(bun -e:*)",
       "WebFetch(domain:forum.inaturalist.org)",
       "WebFetch(domain:pyinaturalist.readthedocs.io)",
-      "WebFetch(domain:www.inaturalist.org)"
+      "WebFetch(domain:www.inaturalist.org)",
+      "Bash(bun install:*)",
+      "Bash(bun eval:*)",
+      "Bash(bun run:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(python3:*)"
     ]
   }
 }

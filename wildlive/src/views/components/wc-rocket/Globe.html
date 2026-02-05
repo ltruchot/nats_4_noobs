@@ -1,5 +1,5 @@
 <template data-rocket:rocket-globe
-          data-props:target='json|={"lat":40,"lng":-100}'
+          data-props:target='json|={"lat":20,"lng":0}'
           data-props:places="json|={}"
 >
   <script data-static>
@@ -11,6 +11,14 @@
   </script>
 
   <script>
+
+    // Inject keyframes into document (Globe.gl renders outside shadow DOM)
+    if (!document.getElementById('marker-fade-in')) {
+      const style = document.createElement('style')
+      style.id = 'marker-fade-in'
+      style.textContent = '@keyframes marker-fade-in { from { opacity: 0 } to { opacity: 1 } }'
+      document.head.appendChild(style)
+    }
 
     // Initialize globe - DOM is ready when setup runs
     const w = $$container.offsetWidth
@@ -26,7 +34,6 @@
 
     // Use watch pattern - create computed signals that only fire when value actually changes
     let prevTargetStr = ''
-    let prevPlacesStr = ''
 
     // Watch target
     effect(() => {
@@ -41,28 +48,36 @@
       }
     })
 
-    // Watch places
+    // Watch places — only append new markers, never rebuild
+    const markers = []
+    const knownIds = new Set()
+
     effect(() => {
-      const placesStr = JSON.stringify($$places || {})
-      if (placesStr !== prevPlacesStr) {
-        prevPlacesStr = placesStr
-        const places = JSON.parse(placesStr)
-        const entries = Object.entries(places)
-        if (entries.length === 0) {
-          g.htmlElementsData([])
-          return
-        }
-        g.htmlElementsData(
-          entries.map(([name, coords], i) => ({ ...coords, name, zIndex: i }))
-        )
-          .htmlLat(d => d.lat)
-          .htmlLng(d => d.lng)
-          .htmlElement(d => {
+      const places = $$places || {}
+      let added = false
+      for (const [id, data] of Object.entries(places)) {
+        if (knownIds.has(id)) continue
+        knownIds.add(id)
+        markers.push({ ...data, id, isNew: true, zIndex: markers.length })
+        added = true
+      }
+      if (!added) return
+
+      g.htmlElementsData([...markers])
+        .htmlLat(d => d.lat)
+        .htmlLng(d => d.lng)
+        .htmlElement(d => {
             const wrapper = document.createElement('div')
             wrapper.className = 'marker-wrapper'
+            if (d.isNew) {
+              wrapper.style.opacity = '0'
+              wrapper.style.animation = 'marker-fade-in 2s ease-out forwards'
+              d.isNew = false
+            }
             wrapper.style.cursor = 'pointer'
             wrapper.style.pointerEvents = 'auto'
             wrapper.style.zIndex = d.zIndex
+            wrapper.id = `marker-${d.id}`
 
             const icon = document.createElement('div')
             icon.className = 'marker-icon'
@@ -74,27 +89,34 @@
             label.className = 'marker-label'
             label.textContent = d.name
 
-            wrapper.appendChild(icon)
-            wrapper.appendChild(label)
+            const card = document.createElement('div')
+            card.className = 'marker-card'
+            card.appendChild(label)
 
-            // Handle marker click
-            wrapper.addEventListener('click', (e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              el.dispatchEvent(new CustomEvent('marker-click', {
-                detail: {
-                  name: d.name,
-                  lat: d.lat,
-                  lng: d.lng
-                },
-                bubbles: true,
-                composed: true
-              }))
-            })
+            if (d.photoUrl) {
+              const photo = document.createElement('div')
+              photo.className = 'marker-photo'
+              const img = document.createElement('img')
+              img.src = d.photoUrl.replace('square', 'small')
+              img.alt = d.name
+              photo.appendChild(img)
+              card.appendChild(photo)
+            }
+
+            wrapper.appendChild(icon)
+            wrapper.appendChild(card)
+
+            // Handle marker click → open Wikipedia
+            if (d.wikiUrl) {
+              wrapper.addEventListener('click', (e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                window.open(d.wikiUrl, '_blank')
+              })
+            }
 
             return wrapper
           })
-      }
     })
 
     // Cleanup on disconnect
@@ -117,12 +139,11 @@
     }
 
     .marker-wrapper {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      transform: translate(-50%, -100%);
       position: relative;
+      transform: translate(-50%, -100%);
       z-index: 1;
+      cursor: pointer;
+      pointer-events: auto;
 
       .marker-icon {
         width: 32px;
@@ -137,22 +158,52 @@
         }
       }
 
+      .marker-card {
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 110px;
+        transition: width 0.2s ease;
+      }
+
+      &:hover {
+        z-index: 9999;
+
+        .marker-card {
+          width: 360px;
+        }
+      }
+
       .marker-label {
-        margin-top: 4px;
         padding: 4px 8px;
         background: linear-gradient(135deg, #9333ea, #7c3aed);
         color: white;
-        border-radius: 4px;
+        border-radius: 4px 4px 0 0;
         font-size: 12px;
-        white-space: nowrap;
-        cursor: pointer;
+        white-space: normal;
+        word-break: break-word;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
         font-weight: 600;
+        text-align: center;
+        box-sizing: border-box;
 
         &:hover {
-          background: linear-gradient(135deg, var(--purple-10), var(--purple-11));
-          transform: scale(1.05);
-          box-shadow: var(--shadow-4);
+          background: linear-gradient(135deg, #7c3aed, #6d28d9);
+        }
+      }
+
+      .marker-photo {
+        border: 2px solid #9333ea;
+        border-top: none;
+        border-radius: 0 0 4px 4px;
+        overflow: hidden;
+        box-sizing: border-box;
+
+        img {
+          display: block;
+          width: 100%;
+          height: auto;
         }
       }
     }

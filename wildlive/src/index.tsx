@@ -1,26 +1,42 @@
 import { ServerSentEventGenerator } from '@starfederation/datastar-sdk/web'
 import { Hono } from 'hono'
 import { serveStatic } from 'hono/bun'
-import cities from './data/cities.json'
+import type { Observation } from '../../types/observation'
 import { Home } from './views/Home'
 
-// Global state - runs forever on server start
-let index = 0
+// --- SSE subscribers ---
+
 const subscribers = new Set<ServerSentEventGenerator>()
 
-// Fake poller - every second, push city info to all subscribers
-setInterval(() => {
-  // extract city info
-  const city = cities[index % cities.length]
-  if (!city) return
-  const { lat, lng, name } = city
+// --- Broadcast (transport-agnostic) ---
 
-  // push city info to all subscribers
+function broadcast({ id, ...place }: Observation) {
   for (const stream of subscribers) {
-    stream.patchSignals(JSON.stringify({ places: { [name]: { lat, lng } } }))
+    try {
+      stream.patchSignals(JSON.stringify({ places: { [id]: place } }))
+    } catch {
+      subscribers.delete(stream)
+    }
   }
-  index++
-}, 1000)
+}
+
+// --- Data source: HTTP poll (lvl0) ---
+async function receiveObservations() {
+  console.log('[wildlive] http://localhost:3000 — polling watcher every 1s')
+  const WATCHER_URL = 'http://localhost:3001'
+
+  while (true) {
+    const observations = await fetch(`${WATCHER_URL}/observations`)
+      .then((r) => r.json() as Promise<Observation[]>)
+      .catch(() => [] as Observation[])
+    for (const obs of observations) broadcast(obs)
+    await Bun.sleep(1_000)
+  }
+}
+
+receiveObservations()
+
+// --- Hono routes ---
 
 const app = new Hono()
 

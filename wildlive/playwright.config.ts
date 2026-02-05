@@ -17,9 +17,16 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command: 'bun run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: [
+    {
+      command: 'bun run tests/e2e/mock-watcher.ts',
+      url: 'http://localhost:3001/observations',
+      reuseExistingServer: !process.env.CI,
+    },
+    {
+      command: 'bun run dev',
+      url: 'http://localhost:3000',
+      reuseExistingServer: !process.env.CI,
+    },
+  ],
 })
