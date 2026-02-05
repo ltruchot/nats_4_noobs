@@ -109,7 +109,13 @@ make app       # Terminal 2
 
 #### Checklist
 
-- [x] **1. NATS server already configured** *(docker-compose.yml present)*
+- [x] **1. NATS infrastructure already configured**
+
+The repo ships with everything needed to run NATS locally:
+
+- `nats/docker-compose.yml` — NATS server container config
+- `Makefile` — `make nats` (start) and `make nats-stop` (stop) targets
+- `render.yaml` — production Blueprint with NATS as a private service (`pserv`)
 
 ```yaml
 # nats/docker-compose.yml
