@@ -17,15 +17,23 @@ async function ingest() {
   }
 }
 
-// --- HTTP transport (lvl0) ---
+// --- NATS transport (lvl2) ---
 
-Bun.serve({
-  port: Number(Bun.env.PORT),
-  routes: {
-    '/last-observations': () => Response.json(buffer.splice(0, Math.ceil(Math.random() * 5))),
-  },
-})
-console.log('[inaturalist-watcher] http://localhost:3001')
+import { connect, StringCodec } from 'nats'
+
+const nc = await connect({ servers: 'localhost:4222' })
+const sc = StringCodec()
+console.log(`[watcher] connected to NATS at ${nc.getServer()}`)
+
+setInterval(() => {
+  const batch = buffer.splice(0, Math.ceil(Math.random() * 5))
+  const grouped = Object.groupBy(batch, (obs) => obs.category ?? 'unknown')
+  for (const [category, observations] of Object.entries(grouped)) {
+    for (const obs of observations ?? []) {
+      nc.publish(`nature.observation.${category}`, sc.encode(JSON.stringify(obs)))
+    }
+  }
+}, 1_000)
 
 setInterval(ingest, 15_000)
 ingest()
@@ -42,13 +50,14 @@ function toObservation(raw: any): Observation {
     photoUrl: raw.photos?.[0]?.url,
     wikiUrl: raw.taxon?.wikipedia_url,
     observedAt: raw.created_at?.match(/T(\d{2}:\d{2}:\d{2})/)?.[1],
+    category: (raw.taxon?.iconic_taxon_name ?? 'unknown').toLowerCase(),
   }
 }
 
 async function fetchObservations(idAbove: number) {
   const INAT_URL = 'https://api.inaturalist.org/v2/observations'
   const INAT_FIELDS =
-    'id,species_guess,geojson,created_at,taxon.preferred_common_name,taxon.wikipedia_url,photos.url'
+    'id,species_guess,geojson,created_at,taxon.preferred_common_name,taxon.wikipedia_url,taxon.iconic_taxon_name,photos.url'
   const params = new URLSearchParams({
     per_page: '150',
     order: 'desc',
@@ -57,7 +66,7 @@ async function fetchObservations(idAbove: number) {
     id_above: String(idAbove),
   })
   const res = await fetch(`${INAT_URL}?${params}`)
-  if (!res.ok) throw new Error(`iNaturalist API error: ${res.status}`);
+  if (!res.ok) throw new Error(`iNaturalist API error: ${res.status}`)
   const { results } = (await res.json()) as { results: any[] }
   return results
 }

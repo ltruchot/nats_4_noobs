@@ -1,64 +1,111 @@
 import { ServerSentEventGenerator } from '@starfederation/datastar-sdk/web'
 import { Hono } from 'hono'
 import { serveStatic } from 'hono/bun'
+import { getCookie, setCookie } from 'hono/cookie'
+import { connect, StringCodec, type Subscription } from 'nats'
 import type { Observation } from '../../types/observation'
 import { Home } from './views/Home'
 
-// --- SSE subscribers ---
+// --- NATS connection (lvl2) ---
 
-const subscribers = new Set<ServerSentEventGenerator>()
+// iNaturalist iconic_taxon_name (lowercased)
+const CATEGORIES = [
+  'aves', // birds
+  'mammalia', // mammals
+  'insecta', // insects
+  'plantae', // plants
+]
+const nc = await connect({ servers: 'localhost:4222' })
+const sc = StringCodec()
+console.log(`[wildlive] connected to NATS at ${nc.getServer()}`)
 
-// --- Broadcast (transport-agnostic) ---
+// --- Per-user subscriptions ---
 
-function broadcast({ id, ...place }: Observation) {
-  for (const stream of subscribers) {
-    try {
-      stream.patchSignals(JSON.stringify({ _places: { [id]: place } }))
-    } catch {
-      subscribers.delete(stream)
+interface UserConnection {
+  stream: ServerSentEventGenerator
+  subs: Map<string, Subscription>
+}
+const users = new Map<string, UserConnection>()
+const userFilters = new Map<string, Record<string, boolean>>()
+
+function listen(conn: UserConnection, subject: string) {
+  const sub = nc.subscribe(subject)
+  conn.subs.set(subject, sub)
+  ;(async () => {
+    for await (const msg of sub) {
+      const obs = JSON.parse(sc.decode(msg.data)) as Observation
+      const { id, ...place } = obs
+      try {
+        conn.stream.patchSignals(JSON.stringify({ _places: { [id]: place } }))
+      } catch {
+        /* cleanup via onAbort */
+      }
     }
+  })()
+}
+
+function syncUserFilters(uid: string, filters: Record<string, boolean>) {
+  const conn = users.get(uid)
+  if (!conn) return
+  for (const sub of conn.subs.values()) sub.unsubscribe()
+  conn.subs.clear()
+  const active = CATEGORIES.filter((c) => filters[c])
+  if (active.length === 0) {
+    listen(conn, 'nature.observation.>')
+  } else {
+    for (const cat of active) listen(conn, `nature.observation.${cat}`)
   }
 }
 
-// --- Data source: HTTP poll (lvl0) ---
-async function receiveObservations() {
-  console.log(`[wildlive] polling ${Bun.env.WATCHER_URL} every 1s`)
-
-  while (true) {
-    const observations = await fetch(`${Bun.env.WATCHER_URL}/last-observations`)
-      .then((r) => r.json() as Promise<Observation[]>)
-      .catch(() => [] as Observation[])
-    for (const obs of observations) broadcast(obs)
-    await Bun.sleep(1_000)
-  }
+function cleanup(uid: string) {
+  const conn = users.get(uid)
+  if (!conn) return
+  for (const sub of conn.subs.values()) sub.unsubscribe()
+  users.delete(uid)
 }
-
-receiveObservations()
 
 // --- Hono routes ---
 
 const app = new Hono()
 
-app.get('/', (c) => c.html(<Home />))
+app.get('/', (c) => {
+  if (!getCookie(c, 'uid')) {
+    setCookie(c, 'uid', crypto.randomUUID())
+  }
+  return c.html(<Home />)
+})
 
-app.get('/sse', () => {
-  let currentStream: ServerSentEventGenerator | undefined
+app.get('/sse', (c) => {
+  const uid = getCookie(c, 'uid')
+  if (!uid) return c.text('missing uid', 401)
+  const filters = userFilters.get(uid) ?? {}
 
   return ServerSentEventGenerator.stream(
     (stream) => {
-      currentStream = stream
-      subscribers.add(currentStream)
+      cleanup(uid)
+      users.set(uid, { stream, subs: new Map() })
+      syncUserFilters(uid, filters)
+      stream.patchSignals(JSON.stringify({ filters }))
     },
     {
       keepalive: true,
-      onAbort: () => {
-        if (currentStream) subscribers.delete(currentStream)
-      },
-      onError: () => {
-        if (currentStream) subscribers.delete(currentStream)
-      },
+      onAbort: () => cleanup(uid),
+      onError: () => cleanup(uid),
     },
   )
+})
+
+app.post('/toggle/:category', async (c) => {
+  const cat = c.req.param('category')
+  if (!CATEGORIES.includes(cat)) return c.text('invalid category', 400)
+  const uid = getCookie(c, 'uid')
+  if (!uid) return c.text('missing uid', 401)
+  const { filters } = (await c.req.json()) as {
+    filters: Record<string, boolean>
+  }
+  userFilters.set(uid, filters)
+  syncUserFilters(uid, filters)
+  return c.body(null, 202)
 })
 
 app.use('/*', serveStatic({ root: './static' }))
