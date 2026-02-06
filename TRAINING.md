@@ -451,53 +451,7 @@ data-signals="{_places: {}, filters: {aves: false, mammalia: false, insecta: fal
 </nav>
 ```
 
-- [ ] **5. `Globe.html`** — color markers by category
-
-In `htmlElement()`, replace the hardcoded marker color with:
-
-```javascript
-const colors = { aves: '#3b82f6', mammalia: '#f59e0b', insecta: '#d1d5db', plantae: '#22c55e' }
-const markerColor = colors[d.category] || '#9333ea'
-// Use markerColor for icon.style.color, label.style.background, photo.style.borderColor
-```
-
-- [ ] **6. `style.css`** — add filter button styles
-
-```css
-.filters {
-  position: absolute;
-  top: 0.75rem;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-  display: flex;
-  gap: 0.5rem;
-}
-
-.filter-btn {
-  padding: 0.4rem 0.8rem;
-  border: 2px solid;
-  border-radius: 1rem;
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  opacity: 0.5;
-  transition: opacity 0.2s, background 0.2s;
-}
-.filter-btn.active { opacity: 1; }
-.filter-btn.aves { border-color: #3b82f6; }
-.filter-btn.aves.active { background: #3b82f6; }
-.filter-btn.mammalia { border-color: #f59e0b; }
-.filter-btn.mammalia.active { background: #f59e0b; }
-.filter-btn.insecta { border-color: #d1d5db; }
-.filter-btn.insecta.active { background: #d1d5db; color: #000; }
-.filter-btn.plantae { border-color: #22c55e; }
-.filter-btn.plantae.active { background: #22c55e; }
-```
-
-- [ ] **7. Test**
+- [ ] **5. Test**
 
 ```bash
 make nats && make watcher && make app

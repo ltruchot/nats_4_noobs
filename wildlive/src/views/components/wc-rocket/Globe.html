@@ -79,14 +79,19 @@
             wrapper.style.zIndex = d.zIndex
             wrapper.id = `marker-${d.id}`
 
+            const colors = { aves: '#3b82f6', mammalia: '#f59e0b', insecta: '#d1d5db', plantae: '#22c55e' }
+            const markerColor = colors[d.category] || '#9333ea'
+
             const icon = document.createElement('div')
             icon.className = 'marker-icon'
             icon.style.width = '32px'
             icon.style.height = '32px'
+            icon.style.color = markerColor
             icon.innerHTML = markerSvg
 
             const label = document.createElement('div')
             label.className = 'marker-label'
+            label.style.background = markerColor
             if (d.observedAt) {
               const time = document.createElement('div')
               time.className = 'marker-time'
@@ -102,6 +107,7 @@
             if (d.photoUrl) {
               const photo = document.createElement('div')
               photo.className = 'marker-photo'
+              photo.style.borderColor = markerColor
               const img = document.createElement('img')
               img.src = d.photoUrl.replace('square', 'small')
               img.alt = d.name
