@@ -1,0 +1,12 @@
+{
+  "name": "nats-matrix",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "slidev --open",
+    "build": "slidev build"
+  },
+  "dependencies": {
+    "@slidev/cli": "^51.0.0"
+  }
+}

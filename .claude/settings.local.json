@@ -51,7 +51,8 @@
       "Bash(head:*)",
       "Bash(docker ps:*)",
       "WebFetch(domain:www.npmjs.com)",
-      "WebFetch(domain:nats-io.github.io)"
+      "WebFetch(domain:nats-io.github.io)",
+      "Bash(bun:*)"
     ]
   }
 }
