@@ -224,6 +224,24 @@ make app
 - http://localhost:3000 → Globe with worldwide wildlife observations
 - http://localhost:8222 → NATS monitoring (connections: 2, messages flowing)
 
+- [ ] **7. Monitor with the NATS CLI**
+
+```bash
+brew install nats-io/nats-tools/nats
+```
+
+Subscribe to all messages in real-time from a terminal:
+
+```bash
+nats sub "nature.>"
+```
+
+You'll see every published observation scroll by — useful for debugging and understanding the message flow.
+
+Also check the built-in HTTP monitoring at http://localhost:8222:
+- `/connz` — active connections
+- `/subsz` — active subscriptions
+
 #### Before / After
 
 | lvl0 (HTTP) | lvl1 (NATS) |
