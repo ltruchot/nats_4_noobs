@@ -34,6 +34,8 @@ Service A ──publish──▶ NATS ──deliver──▶ Service B
 - **DevOps / Cloud native** — service mesh, Kubernetes sidecars, observability pipelines
 - **Anyone tired of** polling APIs, managing WebSocket connections, or configuring Kafka
 
+SDKs officiels : **Go**, **Rust**, **Java**, **Python**, **TypeScript/Deno**, **C**, **.NET**, **Elixir**, **Ruby**...
+
 Not a database. Not a framework. Just an ultra-fast message router.
 
 ---
@@ -138,3 +140,22 @@ Late joiner ──────────▶ ordered consumer ◀────�
 | **Use case** | Real-time events, fire & forget | Event sourcing, audit logs, replay |
 
 Also built-in: **KV Store** (last-value cache) and **Object Store** (large blobs) — all on top of streams.
+
+---
+
+# Sources
+
+**Documentation**
+
+- [nats.io](https://nats.io) — Official docs, architecture, downloads
+- [natsbyexample.com](https://natsbyexample.com) — Runnable code examples in every language
+
+**Podcasts**
+
+- [Go Time #281 — NATS with Derek Collison](https://open.spotify.com/episode/3m0wIrj9GOhDGbBD513bST)
+- [Cup o' Go — NATS deep dive](https://open.spotify.com/episode/3WH4225tjRcUf8a5LfRHAK)
+
+**Code**
+
+- [github.com/nats-io/nats-server](https://github.com/nats-io/nats-server) — The server
+- [github.com/nats-io](https://github.com/nats-io) — All official SDKs & tools

@@ -33,7 +33,7 @@ nats_4_noobs/
 └── TRAINING.md
 ```
 
-- **main branch**: Final state with all NATS features
+- **main branch**: Starting point (lvl0 — no NATS)
 - **lvlX branches**: Each level builds on the previous
 
 ## Data Source
@@ -57,7 +57,7 @@ Docs: https://api.inaturalist.org/v2/docs/
 | **lvl2** | Subjects + filters | Colored markers, toggle buttons | Subject routing, dynamic subscribe/unsubscribe |
 | **lvl3** | Request/Reply | Click point → species details | Request/response pattern |
 | **lvl4** | Auth zero-trust | Role switcher (observer/dashboard/admin) | NKeys, permissions |
-| **lvl5** | JetStream Stream | Replay button + pause/resume | Persistence, history |
+| **lvl5** | JetStream Stream | Auto-replay last 5 min on connect | Persistence, ordered consumers |
 | **lvl6** | JetStream KV | Live counters per taxon | Shared state |
 
 ## Level Details
@@ -326,8 +326,8 @@ import { getCookie, setCookie } from 'hono/cookie'
 // Change nats import to:
 import { connect, StringCodec, type Subscription } from 'nats'
 
-// b) Replace "// --- Data source: NATS subscribe (lvl1) ---"
-//    (nc, sc, receiveObservations, broadcast) with:
+// b) Replace everything between imports and "// --- Hono routes ---":
+//    sections "SSE subscribers", "Broadcast", "Data source" → all replaced by:
 
 // --- NATS connection (lvl2) ---
 
