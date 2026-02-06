@@ -42,17 +42,21 @@ async function listen(conn: UserConnection, subject: string) {
   }
 }
 
-function syncUserFilters(uid: string, filters: Record<string, boolean>) {
-  const conn = users.get(uid)
-  if (!conn) return
-  for (const sub of conn.subs.values()) sub.unsubscribe()
-  conn.subs.clear()
+function buildSubs(conn: UserConnection, filters: Record<string, boolean>) {
   const active = CATEGORIES.filter((c) => filters[c])
   if (active.length === 0) {
     listen(conn, 'nature.observation.>')
   } else {
     for (const cat of active) listen(conn, `nature.observation.${cat}`)
   }
+}
+
+function syncUserFilters(uid: string, filters: Record<string, boolean>) {
+  const conn = users.get(uid)
+  if (!conn) return
+  for (const sub of conn.subs.values()) sub.unsubscribe()
+  conn.subs.clear()
+  buildSubs(conn, filters)
 }
 
 function cleanup(uid: string) {
@@ -81,8 +85,9 @@ app.get('/sse', (c) => {
   return ServerSentEventGenerator.stream(
     (stream) => {
       cleanup(uid)
-      users.set(uid, { stream, subs: new Map() })
-      syncUserFilters(uid, filters)
+      const conn = { stream, subs: new Map<string, Subscription>() }
+      users.set(uid, conn)
+      buildSubs(conn, filters)
       stream.patchSignals(JSON.stringify({ filters }))
     },
     {
