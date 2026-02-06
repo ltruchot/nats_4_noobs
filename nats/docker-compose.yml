@@ -6,5 +6,4 @@ services:
     ports:
       - "4222:4222"   # Client connections
       - "8222:8222"   # Monitoring UI
-    command: ["--http_port", "8222"]
-    # lvl5+ will add: --jetstream
+    command: ["--http_port", "8222", "--jetstream"]

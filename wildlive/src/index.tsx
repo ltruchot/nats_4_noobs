@@ -2,7 +2,12 @@ import { ServerSentEventGenerator } from '@starfederation/datastar-sdk/web'
 import { Hono } from 'hono'
 import { serveStatic } from 'hono/bun'
 import { getCookie, setCookie } from 'hono/cookie'
-import { connect, StringCodec, type Subscription } from 'nats'
+import {
+  type ConsumerMessages,
+  connect,
+  DeliverPolicy,
+  StringCodec,
+} from 'nats'
 import type { Observation } from '../../types/observation'
 import { Home } from './views/Home'
 
@@ -18,20 +23,26 @@ const CATEGORIES = [
 const nc = await connect({ servers: 'localhost:4222' })
 const sc = StringCodec()
 console.log(`[wildlive] connected to NATS at ${nc.getServer()}`)
+const js = nc.jetstream()
 
 // --- Per-user subscriptions ---
 
 interface UserConnection {
   stream: ServerSentEventGenerator
-  subs: Map<string, Subscription>
+  consumers: ConsumerMessages[]
 }
 const users = new Map<string, UserConnection>()
 const userFilters = new Map<string, Record<string, boolean>>()
 
 async function listen(conn: UserConnection, subject: string) {
-  const sub = nc.subscribe(subject)
-  conn.subs.set(subject, sub)
-  for await (const msg of sub) {
+  const consumer = await js.consumers.get('NATURE', {
+    deliver_policy: DeliverPolicy.StartTime,
+    opt_start_time: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    filterSubjects: subject,
+  })
+  const iter = await consumer.consume()
+  conn.consumers.push(iter)
+  for await (const msg of iter) {
     const obs = JSON.parse(sc.decode(msg.data)) as Observation
     const { id, ...place } = obs
     try {
@@ -54,15 +65,15 @@ function buildSubs(conn: UserConnection, filters: Record<string, boolean>) {
 function syncUserFilters(uid: string, filters: Record<string, boolean>) {
   const conn = users.get(uid)
   if (!conn) return
-  for (const sub of conn.subs.values()) sub.unsubscribe()
-  conn.subs.clear()
+  for (const iter of conn.consumers) iter.close()
+  conn.consumers = []
   buildSubs(conn, filters)
 }
 
 function cleanup(uid: string) {
   const conn = users.get(uid)
   if (!conn) return
-  for (const sub of conn.subs.values()) sub.unsubscribe()
+  for (const iter of conn.consumers) iter.close()
   users.delete(uid)
 }
 
@@ -85,7 +96,7 @@ app.get('/sse', (c) => {
   return ServerSentEventGenerator.stream(
     (stream) => {
       cleanup(uid)
-      const conn = { stream, subs: new Map<string, Subscription>() }
+      const conn = { stream, consumers: [] as ConsumerMessages[] }
       users.set(uid, conn)
       buildSubs(conn, filters)
       stream.patchSignals(JSON.stringify({ filters }))

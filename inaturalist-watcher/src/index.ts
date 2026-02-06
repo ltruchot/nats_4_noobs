@@ -19,11 +19,19 @@ async function ingest() {
 
 // --- NATS transport (lvl2) ---
 
-import { connect, StringCodec } from 'nats'
+import { connect, StringCodec, nanos } from 'nats'
 
 const nc = await connect({ servers: 'localhost:4222' })
 const sc = StringCodec()
 console.log(`[watcher] connected to NATS at ${nc.getServer()}`)
+
+const jsm = await nc.jetstreamManager()
+await jsm.streams.add({
+  name: 'NATURE',
+  subjects: ['nature.observation.>'],
+  max_age: nanos(10 * 60 * 1000), // 10 minutes
+})
+console.log('[watcher] NATURE stream ready')
 
 setInterval(() => {
   const batch = buffer.splice(0, Math.ceil(Math.random() * 5))
