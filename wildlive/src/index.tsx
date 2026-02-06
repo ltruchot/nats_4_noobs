@@ -28,20 +28,18 @@ interface UserConnection {
 const users = new Map<string, UserConnection>()
 const userFilters = new Map<string, Record<string, boolean>>()
 
-function listen(conn: UserConnection, subject: string) {
+async function listen(conn: UserConnection, subject: string) {
   const sub = nc.subscribe(subject)
   conn.subs.set(subject, sub)
-  ;(async () => {
-    for await (const msg of sub) {
-      const obs = JSON.parse(sc.decode(msg.data)) as Observation
-      const { id, ...place } = obs
-      try {
-        conn.stream.patchSignals(JSON.stringify({ _places: { [id]: place } }))
-      } catch {
-        /* cleanup via onAbort */
-      }
+  for await (const msg of sub) {
+    const obs = JSON.parse(sc.decode(msg.data)) as Observation
+    const { id, ...place } = obs
+    try {
+      conn.stream.patchSignals(JSON.stringify({ _places: { [id]: place } }))
+    } catch {
+      /* cleanup via onAbort */
     }
-  })()
+  }
 }
 
 function syncUserFilters(uid: string, filters: Record<string, boolean>) {
