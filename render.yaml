@@ -11,8 +11,6 @@ services:
     envVars:
       - key: BUN_VERSION
         value: "1.3.8"
-      - key: PORT
-        value: "10000"
       - key: WATCHER_URL
         value: "https://inaturalist-watcher.onrender.com"
       - key: NATS_URL
@@ -33,8 +31,6 @@ services:
     envVars:
       - key: BUN_VERSION
         value: "1.3.8"
-      - key: PORT
-        value: "10000"
       - key: NATS_URL
         fromService:
           name: nats

@@ -145,8 +145,6 @@ cd ../wildlive && bun add nats
 
 - [ ] **4. inaturalist-watcher: publish to NATS instead of HTTP**
 
-`toObservation()` and `fetchObservations()` stay untouched. We modify `ingest()` and replace the **transport section**.
-
 `nc` = NATS Connection. `sc` = StringCodec, encodes/decodes messages (NATS transports bytes).
 
 > **Why bytes?** NATS, Kafka, RabbitMQ — all transport opaque byte arrays (`Uint8Array`). Language agnostic + flexible. The broker never interprets content — it just moves bytes. Your app encodes (object → JSON string → bytes) and decodes (bytes → string → object).
@@ -159,9 +157,7 @@ In `inaturalist-watcher/src/index.ts`:
 import { connect, StringCodec } from 'nats'
 ```
 
-**b)** Delete `let buffer: Observation[] = []` — observations go straight to NATS.
-
-**c)** Replace `// --- HTTP transport (lvl0) ---` section (up to `// --- iNaturalist API ---`) with:
+**b)** Replace the entire `// --- HTTP transport (lvl0) ---` section (`Bun.serve({...})`, its `console.log`, `setInterval`, and `ingest()` call) with:
 
 ```typescript
 // --- NATS transport (lvl1) ---
@@ -170,23 +166,19 @@ const nc = await connect({ servers: 'localhost:4222' })
 const sc = StringCodec()
 console.log(`[watcher] connected to NATS at ${nc.getServer()}`)
 
+setInterval(() => {
+  for (const obs of buffer.splice(0, Math.ceil(Math.random() * 5))) {
+    nc.publish('nature.observation', sc.encode(JSON.stringify(obs)))
+  }
+}, 1_000)
+
 setInterval(ingest, 15_000)
 ingest()
 ```
 
-**d)** In `ingest()`, replace `buffer.push(...observations)` with:
-
-```typescript
-    for (const obs of observations) {
-      nc.publish('nature.observation', sc.encode(JSON.stringify(obs)))
-    }
-```
-
-> `nc` and `sc` are declared below `ingest()` in the file — works because `ingest()` is only **called** after initialization.
+> The drain `setInterval` publishes 1–5 observations/second to NATS — same drip rhythm as the HTTP endpoint in lvl0.
 
 - [ ] **5. wildlive: subscribe instead of HTTP poll**
-
-`broadcast()` and Hono routes stay untouched. Only the data source changes.
 
 In `wildlive/src/index.tsx`:
 

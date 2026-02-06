@@ -63,4 +63,10 @@ app.get('/sse', () => {
 
 app.use('/*', serveStatic({ root: './static' }))
 
-export default app
+export { app }
+
+export default {
+  port: Number(Bun.env.PORT),
+  fetch: app.fetch,
+  idleTimeout: 0,
+}

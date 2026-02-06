@@ -8,9 +8,7 @@ let lastId = 0
 async function ingest() {
   try {
     const results = await fetchObservations(lastId)
-    if (results.length === 0) return
-
-    lastId = results[0].id
+    if (results.length > 0) lastId = results[0].id
     const observations = results.map(toObservation)
     buffer.push(...observations)
     console.log(`+${observations.length} ingested`)
@@ -59,6 +57,7 @@ async function fetchObservations(idAbove: number) {
     id_above: String(idAbove),
   })
   const res = await fetch(`${INAT_URL}?${params}`)
+  if (!res.ok) throw new Error(`iNaturalist API error: ${res.status}`);
   const { results } = (await res.json()) as { results: any[] }
   return results
 }
