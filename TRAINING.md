@@ -507,20 +507,159 @@ make nats && make watcher && make app
 
 ### lvl5 - JetStream Stream 📋
 
-```
-┌─────────────────────────────────────────────────────┐
-│  [▶ Live]  [⏸ Pause]  [⏪ Replay 5min]              │
-│                                                     │
-│              🌍 Globe                               │
-│     (shows history when replaying)                 │
-└─────────────────────────────────────────────────────┘
+```text
+  Watcher ──nc.publish()──▶ NATS+JetStream ──stream──▶ disk
+
+  New user connects ─────────────┐
+                                 ▼
+                       ordered consumer
+                       ├─ replay 5min ──▶ Globe (history)
+                       └─ then live ────▶ Globe (real-time)
 ```
 
-- Enable `--jetstream` flag
-- Create NATURE stream on `nature.>`
-- Replay: fetch observations from the last N minutes
-- Pause/Resume: stop receiving, then catch up
-- Demonstrates persistence and delivery policies
+**Goal:** New users see the last 5 minutes of observations on connect — no more blank globe.
+
+- JetStream = NATS with persistence. Same binary, one flag: `--jetstream`
+- A **stream** captures messages on matching subjects — stored on disk
+- An **ordered consumer** replays from a point in time, then continues live
+- Watcher publishes exactly like before (`nc.publish()`) — the stream captures automatically
+
+#### Checklist
+
+- [ ] **1. Enable JetStream**
+
+In `nats/docker-compose.yml`, add `--jetstream` to the command:
+
+```yaml
+command: ["--http_port", "8222", "--jetstream"]
+```
+
+```bash
+make nats-stop && make nats
+```
+
+- [ ] **2. Watcher — create the NATURE stream**
+
+In `inaturalist-watcher/src/index.ts`:
+
+**a)** Add `nanos` to the import:
+
+```typescript
+import { connect, StringCodec, nanos } from 'nats'
+```
+
+**b)** After `console.log('[watcher] connected...')`, add:
+
+```typescript
+const jsm = await nc.jetstreamManager()
+await jsm.streams.add({
+  name: 'NATURE',
+  subjects: ['nature.observation.>'],
+  max_age: nanos(10 * 60 * 1000), // 10 minutes
+})
+console.log('[watcher] NATURE stream ready')
+```
+
+> No change to `nc.publish()` — the stream captures all `nature.observation.>` messages automatically.
+
+- [ ] **3. Wildlive — ordered consumer with 5-min replay**
+
+In `wildlive/src/index.tsx`:
+
+**a)** Change the nats import (remove `type Subscription`, add `DeliverPolicy` + `type ConsumerMessages`):
+
+```typescript
+import { connect, StringCodec, DeliverPolicy, type ConsumerMessages } from 'nats'
+```
+
+**b)** After `console.log('[wildlive] connected...')`, add:
+
+```typescript
+const js = nc.jetstream()
+```
+
+**c)** Change `UserConnection` type:
+
+```typescript
+interface UserConnection {
+  stream: ServerSentEventGenerator
+  consumers: ConsumerMessages[]
+}
+```
+
+**d)** Replace `listen()`:
+
+```typescript
+async function listen(conn: UserConnection, subject: string) {
+  const consumer = await js.consumers.get('NATURE', {
+    deliver_policy: DeliverPolicy.StartTime,
+    opt_start_time: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    filterSubjects: subject,
+  })
+  const iter = await consumer.consume()
+  conn.consumers.push(iter)
+  for await (const msg of iter) {
+    const obs = JSON.parse(sc.decode(msg.data)) as Observation
+    const { id, ...place } = obs
+    try {
+      conn.stream.patchSignals(JSON.stringify({ _places: { [id]: place } }))
+    } catch { /* cleanup via onAbort */ }
+  }
+}
+```
+
+> `DeliverPolicy.StartTime` = replay from 5 min ago, then continue live. Seamless.
+
+**e)** Replace `syncUserFilters()`:
+
+```typescript
+function syncUserFilters(uid: string, filters: Record<string, boolean>) {
+  const conn = users.get(uid)
+  if (!conn) return
+  for (const iter of conn.consumers) iter.close()
+  conn.consumers = []
+  buildSubs(conn, filters)
+}
+```
+
+**f)** Replace `cleanup()`:
+
+```typescript
+function cleanup(uid: string) {
+  const conn = users.get(uid)
+  if (!conn) return
+  for (const iter of conn.consumers) iter.close()
+  users.delete(uid)
+}
+```
+
+**g)** In the SSE handler, change `subs: new Map<string, Subscription>()` to:
+
+```typescript
+const conn = { stream, consumers: [] as ConsumerMessages[] }
+```
+
+> `buildSubs()` is unchanged — it calls `listen()` which now uses JetStream internally.
+
+- [ ] **4. Test**
+
+```bash
+make nats && make watcher && make app
+```
+
+- Open http://localhost:3000 — wait 1-2 min for observations to accumulate
+- Open a **second tab** — globe shows recent observations immediately (replay!)
+- Toggle filters — replay respects the active filter
+- `nats stream info NATURE` — shows message count + bytes stored
+
+#### Before / After
+
+| lvl2 (Core NATS) | lvl5 (JetStream) |
+|---|---|
+| New tab = blank globe | New tab = last 5 min of observations |
+| `nc.subscribe()` — fire & forget | Ordered consumer — replay + live |
+| Messages lost when no subscriber | Messages persisted in NATURE stream |
+| `sub.unsubscribe()` | `iter.close()` |
 
 ### lvl6 - JetStream KV 📋
 

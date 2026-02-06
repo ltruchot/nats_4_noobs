@@ -49,7 +49,9 @@
       "mcp__ide__getDiagnostics",
       "Bash(python3:*)",
       "Bash(head:*)",
-      "Bash(docker ps:*)"
+      "Bash(docker ps:*)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:nats-io.github.io)"
     ]
   }
 }
