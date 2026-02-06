@@ -160,7 +160,6 @@
       .marker-icon {
         width: 32px;
         height: 32px;
-        color: #9333ea;
         filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
 
         svg {
@@ -189,7 +188,6 @@
 
       .marker-label {
         padding: 4px 8px;
-        background: linear-gradient(135deg, #9333ea, #7c3aed);
         color: white;
         border-radius: 4px 4px 0 0;
         font-size: 12px;
@@ -206,12 +204,12 @@
         box-sizing: border-box;
 
         &:hover {
-          background: linear-gradient(135deg, #7c3aed, #6d28d9);
+          filter: brightness(0.85);
         }
       }
 
       .marker-photo {
-        border: 2px solid #9333ea;
+        border: 2px solid;
         border-top: none;
         border-radius: 0 0 4px 4px;
         overflow: hidden;

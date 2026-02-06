@@ -6,4 +6,5 @@ export interface Observation {
   photoUrl?: string | null
   wikiUrl?: string | null
   observedAt?: string
+  category?: string
 }
