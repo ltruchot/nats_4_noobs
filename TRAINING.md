@@ -54,12 +54,11 @@ Docs: https://api.inaturalist.org/v2/docs/
 |-------|---------|-------------|----------------|
 | **lvl0** | Baseline | Watcher → HTTP → Wildlive | Starting point, no NATS yet |
 | **lvl1** | Pub/Sub basics | Watcher → NATS → Wildlive | First NATS connection, decoupling |
-| **lvl2** | Subjects | Points colored by taxon | Message routing |
-| **lvl3** | Wildcards + filters | Toggle buttons per taxon | Dynamic subscribe/unsubscribe |
-| **lvl4** | Request/Reply | Click point → species details | Request/response pattern |
-| **lvl5** | Auth zero-trust | Role switcher (observer/dashboard/admin) | NKeys, permissions |
-| **lvl6** | JetStream Stream | Replay button + pause/resume | Persistence, history |
-| **lvl7** | JetStream KV | Live counters per taxon | Shared state |
+| **lvl2** | Subjects + filters | Colored markers, toggle buttons | Subject routing, dynamic subscribe/unsubscribe |
+| **lvl3** | Request/Reply | Click point → species details | Request/response pattern |
+| **lvl4** | Auth zero-trust | Role switcher (observer/dashboard/admin) | NKeys, permissions |
+| **lvl5** | JetStream Stream | Replay button + pause/resume | Persistence, history |
+| **lvl6** | JetStream KV | Live counters per taxon | Shared state |
 
 ## Level Details
 
@@ -269,37 +268,249 @@ Also check the built-in HTTP monitoring at http://localhost:8222:
 └───────────────────────────────────────────────────────┘
 ```
 
-### lvl2 - Subjects 📋
+### lvl2 - Subjects + Filters 📋
 
-```
+```text
+No filter → nature.observation.> (wildcard, all categories)
+
 ┌─────────────────────────────────────────────────────┐
-│              🌍 Globe                               │
-│    🔵 bird   🟢 insect   🟡 mammal   🟣 plant      │
-└─────────────────────────────────────────────────────┘
-```
-
-- Publisher routes by taxon: `nature.Aves`, `nature.Insecta`, etc.
-- Subscriber on `nature.>` receives all
-- Points colored by subject/taxon
-- Understand subject hierarchy
-
-### lvl3 - Subscription Filters 📋
-
-```
-┌─────────────────────────────────────────────────────┐
-│  [🐦 Birds]  [🦋 Insects]  [🐿 Mammals]  [🌱 Plants] │
-│     ON          OFF           ON           OFF      │
+│  [Aves]  [Mammalia]  [Insecta]  [Plantae]           │
+│    ON       OFF          ON        OFF              │
 ├─────────────────────────────────────────────────────┤
 │              🌍 Globe                               │
-│        (only birds + mammals visible)              │
+│    🔵 aves               ⚪ insecta                  │
+│  (mammalia + plantae dropped — fire & forget)       │
 └─────────────────────────────────────────────────────┘
 ```
 
-- Click "Insects OFF → ON" = `nc.subscribe('nature.Insecta')`
-- Click "Birds ON → OFF" = `sub.unsubscribe()`
-- Datastar manages reactive button state
+**Goal:** Route observations by category using NATS subjects. Toggle buttons dynamically subscribe/unsubscribe per category, per user.
 
-### lvl4 - Request/Reply 📋
+- NATS subjects = dot-delimited tokens (`nature.observation.aves`) → broker-level filtering
+- Categories = iNaturalist `iconic_taxon_name` lowercased
+- No filter active = wildcard `>` = all categories
+- `>` matches any token: aves, mammalia, fungi, etc.
+- Per-user: each SSE connection has its own NATS subscriptions via `uid` cookie
+- CQRS: toggle = `POST 202`, observations flow through `GET /sse`
+- Fire & forget: no subscriber = message dropped by broker
+
+#### Checklist
+
+- [ ] **1. `types/observation.ts`** — add `category?: string`
+- [ ] **2. Watcher: categorize + publish by subject**
+
+```typescript
+// a) Replace INAT_FIELDS with:
+const INAT_FIELDS =
+  'id,species_guess,geojson,created_at,taxon.preferred_common_name,taxon.wikipedia_url,taxon.iconic_taxon_name,photos.url'
+
+// b) In toObservation(), add:
+category: (raw.taxon?.iconic_taxon_name ?? 'unknown').toLowerCase(),
+
+// c) Replace publish setInterval:
+setInterval(() => {
+  const batch = buffer.splice(0, Math.ceil(Math.random() * 5))
+  const grouped = Object.groupBy(batch, (obs) => obs.category ?? 'unknown')
+  for (const [category, observations] of Object.entries(grouped)) {
+    for (const obs of observations ?? []) {
+      nc.publish(`nature.observation.${category}`, sc.encode(JSON.stringify(obs)))
+    }
+  }
+}, 1_000)
+```
+
+- [ ] **3. Wildlive: per-user NATS subscriptions**
+
+```typescript
+// a) Add import:
+import { getCookie, setCookie } from 'hono/cookie'
+// Change nats import to:
+import { connect, StringCodec, type Subscription } from 'nats'
+
+// b) Replace "// --- Data source: NATS subscribe (lvl1) ---"
+//    (nc, sc, receiveObservations, broadcast) with:
+
+// --- NATS connection (lvl2) ---
+
+const CATEGORIES = [
+  'aves',      // birds
+  'mammalia',  // mammals
+  'insecta',   // insects
+  'plantae',   // plants
+]
+const nc = await connect({ servers: 'localhost:4222' })
+const sc = StringCodec()
+console.log(`[wildlive] connected to NATS at ${nc.getServer()}`)
+
+// --- Per-user subscriptions ---
+
+interface UserConnection {
+  stream: ServerSentEventGenerator
+  subs: Map<string, Subscription>
+}
+const users = new Map<string, UserConnection>()
+const userFilters = new Map<string, Record<string, boolean>>()
+
+function listen(conn: UserConnection, subject: string) {
+  const sub = nc.subscribe(subject)
+  conn.subs.set(subject, sub)
+  ;(async () => {
+    for await (const msg of sub) {
+      const obs = JSON.parse(sc.decode(msg.data)) as Observation
+      const { id, ...place } = obs
+      try {
+        conn.stream.patchSignals(JSON.stringify({ _places: { [id]: place } }))
+      } catch { /* cleanup via onAbort */ }
+    }
+  })()
+}
+
+function syncUserFilters(uid: string, filters: Record<string, boolean>) {
+  const conn = users.get(uid)
+  if (!conn) return
+  for (const sub of conn.subs.values()) sub.unsubscribe()
+  conn.subs.clear()
+  const active = CATEGORIES.filter((c) => filters[c])
+  if (active.length === 0) {
+    listen(conn, 'nature.observation.>')
+  } else {
+    for (const cat of active) listen(conn, `nature.observation.${cat}`)
+  }
+}
+
+function cleanup(uid: string) {
+  const conn = users.get(uid)
+  if (!conn) return
+  for (const sub of conn.subs.values()) sub.unsubscribe()
+  users.delete(uid)
+}
+
+// c) Replace GET / — set uid cookie on first visit
+app.get('/', (c) => {
+  if (!getCookie(c, 'uid')) setCookie(c, 'uid', crypto.randomUUID())
+  return c.html(<Home />)
+})
+
+// d) Replace GET /sse — restore filters from server, push to client
+app.get('/sse', (c) => {
+  const uid = getCookie(c, 'uid')
+  if (!uid) return c.text('missing uid', 401)
+  const filters = userFilters.get(uid) ?? {}
+
+  return ServerSentEventGenerator.stream(
+    (stream) => {
+      cleanup(uid)
+      users.set(uid, { stream, subs: new Map() })
+      syncUserFilters(uid, filters)
+      stream.patchSignals(JSON.stringify({ filters }))
+    },
+    {
+      keepalive: true,
+      onAbort: () => cleanup(uid),
+      onError: () => cleanup(uid),
+    },
+  )
+})
+
+// e) Add POST /toggle/:category — store filters, CQRS: 202
+app.post('/toggle/:category', async (c) => {
+  const cat = c.req.param('category')
+  if (!CATEGORIES.includes(cat)) return c.text('invalid category', 400)
+  const uid = getCookie(c, 'uid')
+  if (!uid) return c.text('missing uid', 401)
+  const { filters } = (await c.req.json()) as {
+    filters: Record<string, boolean>
+  }
+  userFilters.set(uid, filters)
+  syncUserFilters(uid, filters)
+  return c.body(null, 202)
+})
+```
+
+- [ ] **4. `Home.tsx`** — add `filters` signal + toggle buttons
+
+```tsx
+// Add filters to data-signals:
+data-signals="{_places: {}, filters: {aves: false, mammalia: false, insecta: false, plantae: false}}"
+
+// Add <nav> before <rocket-globe>:
+<nav class="filters">
+  <button type="button"
+    data-on:click="$filters.aves = !$filters.aves; @post('/toggle/aves')"
+    data-class:active="$filters.aves"
+    class="filter-btn aves">Aves</button>
+  <button type="button"
+    data-on:click="$filters.mammalia = !$filters.mammalia; @post('/toggle/mammalia')"
+    data-class:active="$filters.mammalia"
+    class="filter-btn mammalia">Mammalia</button>
+  <button type="button"
+    data-on:click="$filters.insecta = !$filters.insecta; @post('/toggle/insecta')"
+    data-class:active="$filters.insecta"
+    class="filter-btn insecta">Insecta</button>
+  <button type="button"
+    data-on:click="$filters.plantae = !$filters.plantae; @post('/toggle/plantae')"
+    data-class:active="$filters.plantae"
+    class="filter-btn plantae">Plantae</button>
+</nav>
+```
+
+- [ ] **5. `Globe.html`** — color markers by category
+
+In `htmlElement()`, replace the hardcoded marker color with:
+
+```javascript
+const colors = { aves: '#3b82f6', mammalia: '#f59e0b', insecta: '#d1d5db', plantae: '#22c55e' }
+const markerColor = colors[d.category] || '#9333ea'
+// Use markerColor for icon.style.color, label.style.background, photo.style.borderColor
+```
+
+- [ ] **6. `style.css`** — add filter button styles
+
+```css
+.filters {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.filter-btn {
+  padding: 0.4rem 0.8rem;
+  border: 2px solid;
+  border-radius: 1rem;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.2s, background 0.2s;
+}
+.filter-btn.active { opacity: 1; }
+.filter-btn.aves { border-color: #3b82f6; }
+.filter-btn.aves.active { background: #3b82f6; }
+.filter-btn.mammalia { border-color: #f59e0b; }
+.filter-btn.mammalia.active { background: #f59e0b; }
+.filter-btn.insecta { border-color: #d1d5db; }
+.filter-btn.insecta.active { background: #d1d5db; color: #000; }
+.filter-btn.plantae { border-color: #22c55e; }
+.filter-btn.plantae.active { background: #22c55e; }
+```
+
+- [ ] **7. Test**
+
+```bash
+make nats && make watcher && make app
+```
+
+- No toggle → wildcard → all markers
+- Toggle "Aves" → blue markers only, rest dropped
+- Reload → filters restored from server (uid cookie)
+- `nats sub "nature.observation.>"` → messages routed by category
+
+### lvl3 - Request/Reply 📋
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -319,7 +530,7 @@ Also check the built-in HTTP monitoring at http://localhost:8222:
 - Click → `nc.request('species.details', id)` → response with enriched data
 - Responder service fetches additional info from iNaturalist API
 
-### lvl5 - Zero-Trust Auth 📋
+### lvl4 - Zero-Trust Auth 📋
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -337,7 +548,7 @@ Also check the built-in HTTP monitoring at http://localhost:8222:
 - Granular permissions per subject
 - Switch roles to see permission errors
 
-### lvl6 - JetStream Stream 📋
+### lvl5 - JetStream Stream 📋
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -354,7 +565,7 @@ Also check the built-in HTTP monitoring at http://localhost:8222:
 - Pause/Resume: stop receiving, then catch up
 - Demonstrates persistence and delivery policies
 
-### lvl7 - JetStream KV 📋
+### lvl6 - JetStream KV 📋
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -389,13 +600,15 @@ fire & forget           NKeys/JWT          persistence         (specialized)
 
 ## NATS Topics Structure
 
-```
-nature.Aves        # Birds
-nature.Insecta     # Insects
-nature.Mammalia    # Mammals
-nature.Plantae     # Plants
-nature.Fungi       # Fungi
-nature.>           # All observations (wildcard)
+```text
+nature.observation.aves            # Aves = birds
+nature.observation.mammalia        # Mammalia = mammals
+nature.observation.insecta         # Insecta = insects
+nature.observation.plantae         # Plantae = plants
+nature.observation.fungi           # Fungi = mushrooms & molds
+nature.observation.reptilia        # Reptilia = reptiles
+nature.observation.arachnida       # Arachnida = spiders & scorpions
+nature.observation.>               # All observations (wildcard)
 ```
 
 ## NATS Installation
@@ -411,7 +624,7 @@ nats-server
 docker run -p 4222:4222 nats:latest
 ```
 
-### With JetStream (lvl6+)
+### With JetStream (lvl5+)
 
 ```bash
 # Same binary, just add the flag

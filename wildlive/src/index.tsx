@@ -13,7 +13,7 @@ const subscribers = new Set<ServerSentEventGenerator>()
 function broadcast({ id, ...place }: Observation) {
   for (const stream of subscribers) {
     try {
-      stream.patchSignals(JSON.stringify({ places: { [id]: place } }))
+      stream.patchSignals(JSON.stringify({ _places: { [id]: place } }))
     } catch {
       subscribers.delete(stream)
     }
