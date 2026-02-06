@@ -27,6 +27,7 @@
     "@starfederation/datastar-sdk": "^1.0.0-RC.3",
     "globe.gl": "^2.45.0",
     "hono": "^4.11.7",
+    "nats": "^2.29.3",
     "three": "^0.182.0"
   }
 }

@@ -1,72 +1,74 @@
-import { ServerSentEventGenerator } from '@starfederation/datastar-sdk/web'
-import { Hono } from 'hono'
-import { serveStatic } from 'hono/bun'
-import type { Observation } from '../../types/observation'
-import { Home } from './views/Home'
+import { ServerSentEventGenerator } from "@starfederation/datastar-sdk/web";
+import { Hono } from "hono";
+import { serveStatic } from "hono/bun";
+import type { Observation } from "../../types/observation";
+import { Home } from "./views/Home";
+import { connect, StringCodec } from "nats";
 
 // --- SSE subscribers ---
 
-const subscribers = new Set<ServerSentEventGenerator>()
+const subscribers = new Set<ServerSentEventGenerator>();
 
 // --- Broadcast (transport-agnostic) ---
 
 function broadcast({ id, ...place }: Observation) {
   for (const stream of subscribers) {
     try {
-      stream.patchSignals(JSON.stringify({ _places: { [id]: place } }))
+      stream.patchSignals(JSON.stringify({ _places: { [id]: place } }));
     } catch {
-      subscribers.delete(stream)
+      subscribers.delete(stream);
     }
   }
 }
 
 // --- Data source: HTTP poll (lvl0) ---
-async function receiveObservations() {
-  console.log(`[wildlive] polling ${Bun.env.WATCHER_URL} every 1s`)
+const nc = await connect({ servers: "localhost:4222" });
+const sc = StringCodec();
 
-  while (true) {
-    const observations = await fetch(`${Bun.env.WATCHER_URL}/last-observations`)
-      .then((r) => r.json() as Promise<Observation[]>)
-      .catch(() => [] as Observation[])
-    for (const obs of observations) broadcast(obs)
-    await Bun.sleep(1_000)
+async function receiveObservations() {
+  console.log(`[wildlive] polling ${Bun.env.WATCHER_URL} every 1s`);
+
+  console.log(`[wildlive] connected to NATS at ${nc.getServer()}`);
+  for await (const msg of nc.subscribe("nature.observation")) {
+    const obs = JSON.parse(sc.decode(msg.data)) as Observation;
+    broadcast(obs);
   }
 }
 
-receiveObservations()
+receiveObservations();
 
 // --- Hono routes ---
 
-const app = new Hono()
+const app = new Hono();
 
-app.get('/', (c) => c.html(<Home />))
+app.get("/", (c) => c.html(<Home />));
 
-app.get('/sse', () => {
-  let currentStream: ServerSentEventGenerator | undefined
+app.get("/sse", () => {
+  let currentStream: ServerSentEventGenerator | undefined;
 
   return ServerSentEventGenerator.stream(
     (stream) => {
-      currentStream = stream
-      subscribers.add(currentStream)
+      currentStream = stream;
+      subscribers.add(currentStream);
     },
     {
       keepalive: true,
       onAbort: () => {
-        if (currentStream) subscribers.delete(currentStream)
+        if (currentStream) subscribers.delete(currentStream);
       },
       onError: () => {
-        if (currentStream) subscribers.delete(currentStream)
+        if (currentStream) subscribers.delete(currentStream);
       },
     },
-  )
-})
+  );
+});
 
-app.use('/*', serveStatic({ root: './static' }))
+app.use("/*", serveStatic({ root: "./static" }));
 
-export { app }
+export { app };
 
 export default {
   port: Number(Bun.env.PORT),
   fetch: app.fetch,
   idleTimeout: 0,
-}
+};
